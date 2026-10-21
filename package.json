@@ -6,7 +6,7 @@
     "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
   },
   "scripts": {
-    "prepare": "lefthook install && playwright install chromium",
+    "prepare": "lefthook install",
     "dev": "concurrently -k -n backend,dashboard npm:dev:backend npm:dev:dashboard",
     "dev:backend": "uv run -m uvicorn backend.main:app --reload --reload-dir backend",
     "dev:dashboard": "vite dashboard",

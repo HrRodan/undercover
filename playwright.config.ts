@@ -4,7 +4,12 @@ export default defineConfig({
   testDir: "e2e",
   outputDir: "e2e/test-results",
   reporter: "list",
-  use: { baseURL: "http://localhost:5173" },
+  use: {
+    baseURL: "http://localhost:5173",
+    launchOptions: {
+      executablePath: "/usr/bin/chromium",
+    },
+  },
   webServer: [
     {
       command: "uv run -m uvicorn backend.main:app --port 8000",
