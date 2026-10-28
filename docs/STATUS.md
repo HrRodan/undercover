@@ -3,16 +3,16 @@
 ## Built so far
 
 - **Phase 1 — SQLAlchemy Database Models & Seed Data Layer**:
-  - `backend/models.py`: SQLAlchemy 2.x ORM models (`CompanyRecord`, `PlanRecord`, `AddOnRecord`, `PolicyRecord`, `CustomerRecord`, `HandlerRecord`, `ClaimRecord`, `ClaimStepRecord`, `PolicyWordingRecord`, `InstructionsRecord`).
-  - `backend/db.py`: SQLAlchemy engine, `get_session` dependency, and idempotent seed loader for `company.json`, `plans.json`, `policies.json`, `customers.json`, `handlers.json`, `claims.json`, `policy_wording.md`, and read-only agent instructions.
-  - `backend/schemas.py`: Typed Pydantic request and response models.
+  - `backend/models.py`, `backend/db.py`, `backend/schemas.py`, `backend/tests/test_db.py`
 - **Phase 2 — Backend Read, Decision, Payment & Sign-Off API**:
-  - `backend/main.py`: FastAPI routes with explicit `operation_id`s (`health`, `list_claims`, `get_claim`, `get_policy`, `get_customer`, `list_handlers`, `get_policy_wording`, `get_instructions`, `record_claim_step`, `decide_claim`, `pay_claim`, `sign_off_claim`).
+  - `backend/main.py`, `backend/tests/test_api.py`
 - **Phase 3 — The UnderCover Agent & Backend Run Trigger**:
-  - `agent/main.py`: LangChain `create_agent` entry point `run(claim_id, thread_id, llm=None)` on OpenRouter (`openai/gpt-6-luna` with `reasoning_effort="low"` by default, or `MODEL_NAME`), fetching its system prompt from `GET /api/instructions` and logging step-by-step progress via tools.
-  - `backend/main.py`: `POST /api/claims/{claim_id}/run` (`run_claim_agent`).
+  - `agent/main.py`, `agent/tests/test_agent.py`, `POST /api/claims/{claim_id}/run`
 - **Phase 4 — Dashboard Foundation, Brand Theme & Claims Queue**:
-  - `dashboard/index.html` & `dashboard/src/styles.css`: Nordic Obsidian & Precision Daylight theme (`Space Grotesk`, `Plus Jakarta Sans`, `Fraunces`, `Geist Mono`) with light and dark surface custom properties.
-  - `dashboard/src/types.ts` & `dashboard/src/api.ts`: Strict TypeScript models and API client.
-  - `dashboard/src/components/StatusBadge.tsx` & `dashboard/src/components/ClaimsQueue.tsx`: Semantic status/decision badges and filterable claims queue table with tabular USD currency columns.
+  - `dashboard/index.html`, `dashboard/src/styles.css`, `dashboard/src/types.ts`, `dashboard/src/api.ts`, `dashboard/src/components/StatusBadge.tsx`, `dashboard/src/components/ClaimsQueue.tsx`
+- **Phase 5 — Claim Detail View, Live Agent Steps, Sign-Off & Instructions Screen**:
+  - `dashboard/src/components/ClaimDetail.tsx`: Full claim inspection (story, items, supporting documents, policy & plan coverage, customer history, decision card, "Run Agent" button, and Handler Sign-Off workflow for approvals over $1,000).
+  - `dashboard/src/components/AgentSteps.tsx`: Step-by-step agent progress feed.
+  - `dashboard/src/components/InstructionsView.tsx`: Read-only agent instructions and policy wording reference.
+  - `dashboard/src/App.tsx` & `dashboard/src/App.test.tsx`: Two-column operational workspace, live step polling, theme toggle, and component test suite.
 - `e2e/`: Playwright smoke test

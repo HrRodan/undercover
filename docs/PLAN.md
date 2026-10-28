@@ -173,12 +173,12 @@ Handlers can select any claim in the queue to inspect the full record side by si
 
 ### Success Criteria
 
-- [ ] Component tests in `dashboard/src/App.test.tsx` verify:
+- [x] Component tests in `dashboard/src/App.test.tsx` verify:
   - Selecting a claim loads and displays the customer's story, itemized claim breakdown, attached documents, policy plan limits, and previous claims.
   - Clicking "Run Agent" calls `POST /api/claims/{claim_id}/run` and displays the step-by-step trace and resulting decision, payout, policy section, and 2-3 sentence reason.
   - Viewing a claim in `waiting_for_sign_off` shows that payment is held pending handler sign-off and allows a handler to click "Sign Off & Release Payment", calling `POST /api/claims/{claim_id}/sign-off`.
   - Switching to the "Agent Instructions" tab displays the agent's instructions in a read-only view (`GET /api/instructions`).
-- [ ] Command `npm run check:ts` passes `prettier --check`, `eslint`, `tsc`, and `vitest --coverage` with `>= 80%` coverage.
+- [x] Command `npm run check:ts` passes `prettier --check`, `eslint`, `tsc`, and `vitest --coverage` with `>= 80%` coverage.
 
 ---
 
