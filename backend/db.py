@@ -1,18 +1,21 @@
-"""SQLAlchemy database engine, session management, and seed loader."""
+"""SQLAlchemy database engine, session management, seed loader, and ORM operations."""
 
 import json
 import os
 from collections.abc import Generator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import Engine, create_engine, select
+from fastapi import HTTPException
+from sqlalchemy import Engine, create_engine, delete, select
 from sqlalchemy.orm import Session
 
 from backend.models import (
     AddOnRecord,
     Base,
     ClaimRecord,
+    ClaimStepRecord,
     CompanyRecord,
     CustomerRecord,
     HandlerRecord,
@@ -20,6 +23,24 @@ from backend.models import (
     PlanRecord,
     PolicyRecord,
     PolicyWordingRecord,
+)
+from backend.schemas import (
+    AddOnDetails,
+    AddressDetails,
+    ClaimDetail,
+    ClaimDocument,
+    ClaimItem,
+    ClaimStep,
+    ClaimSummary,
+    CustomerDetail,
+    DecisionRequest,
+    HandlerDetail,
+    InstructionsResponse,
+    PlanDetails,
+    PolicyDetail,
+    PolicyWordingResponse,
+    PreviousClaim,
+    TripDetails,
 )
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
@@ -253,3 +274,298 @@ def get_session() -> Generator[Session, None, None]:
     init_db(engine)
     with Session(engine) as session:
         yield session
+
+
+def claim_to_summary(row: ClaimRecord) -> ClaimSummary:
+    """Convert a ClaimRecord ORM row into a ClaimSummary schema."""
+    return ClaimSummary(
+        claim_id=row.claim_id,
+        policy_id=row.policy_id,
+        customer_id=row.customer_id,
+        claim_type=row.claim_type,
+        submitted_on=row.submitted_on,
+        incident_date=row.incident_date,
+        incident_location=row.incident_location,
+        summary=row.summary,
+        amount_claimed=row.amount_claimed,
+        status=row.status,
+        decision=row.decision,
+        payout=row.payout,
+        policy_section=row.policy_section,
+        reason=row.reason,
+        payment_status=row.payment_status,
+        amount_paid=row.amount_paid,
+        signed_off_by=row.signed_off_by,
+    )
+
+
+def claim_to_detail(session: Session, row: ClaimRecord) -> ClaimDetail:
+    """Convert a ClaimRecord ORM row and its steps into a ClaimDetail schema."""
+    steps = list(
+        session.scalars(
+            select(ClaimStepRecord)
+            .where(ClaimStepRecord.claim_id == row.claim_id)
+            .order_by(ClaimStepRecord.step_number)
+        )
+    )
+    items = [ClaimItem.model_validate(item) for item in json.loads(row.items_json)]
+    documents = [
+        ClaimDocument.model_validate(doc) for doc in json.loads(row.documents_json)
+    ]
+    step_models = [
+        ClaimStep(
+            step_number=s.step_number,
+            message=s.message,
+            created_at=s.created_at,
+        )
+        for s in steps
+    ]
+    return ClaimDetail(
+        **claim_to_summary(row).model_dump(),
+        story=row.story,
+        items=items,
+        documents=documents,
+        steps=step_models,
+    )
+
+
+def get_claim_or_404(session: Session, claim_id: str) -> ClaimRecord:
+    """Fetch a claim by ID or raise HTTP 404."""
+    claim = session.scalar(select(ClaimRecord).where(ClaimRecord.claim_id == claim_id))
+    if claim is None:
+        raise HTTPException(status_code=404, detail=f"Claim {claim_id} not found")
+    return claim
+
+
+def list_claims(session: Session) -> list[ClaimSummary]:
+    """Return all claims ordered by their queue position."""
+    rows = session.scalars(select(ClaimRecord).order_by(ClaimRecord.queue_order))
+    return [claim_to_summary(row) for row in rows]
+
+
+def get_claim_detail(session: Session, claim_id: str) -> ClaimDetail:
+    """Return the full detail for a single claim."""
+    claim = get_claim_or_404(session, claim_id)
+    return claim_to_detail(session, claim)
+
+
+def get_policy_detail(session: Session, policy_id: str) -> PolicyDetail:
+    """Return a policy along with its resolved plan and add-on details."""
+    policy = session.scalar(
+        select(PolicyRecord).where(PolicyRecord.policy_id == policy_id)
+    )
+    if policy is None:
+        raise HTTPException(status_code=404, detail=f"Policy {policy_id} not found")
+    plan = session.scalar(select(PlanRecord).where(PlanRecord.plan == policy.plan))
+    if plan is None:
+        raise HTTPException(status_code=404, detail=f"Plan {policy.plan} not found")
+    add_on_ids: list[str] = json.loads(policy.add_ons_json)
+    add_on_details: list[AddOnDetails] = []
+    for add_on_id in add_on_ids:
+        add_on = session.scalar(
+            select(AddOnRecord).where(AddOnRecord.add_on == add_on_id)
+        )
+        if add_on is not None:
+            add_on_details.append(
+                AddOnDetails(
+                    add_on=add_on.add_on,
+                    name=add_on.name,
+                    effect=add_on.effect,
+                    electronics_per_item_limit=add_on.electronics_per_item_limit,
+                )
+            )
+    plan_details = PlanDetails(
+        plan=plan.plan,
+        name=plan.name,
+        trip_cancellation_max=plan.trip_cancellation_max,
+        trip_delay_waiting_hours=plan.trip_delay_waiting_hours,
+        trip_delay_max=plan.trip_delay_max,
+        baggage_delay_waiting_hours=plan.baggage_delay_waiting_hours,
+        baggage_delay_max=plan.baggage_delay_max,
+        baggage_max=plan.baggage_max,
+        per_item_limit=plan.per_item_limit,
+        passport_max=plan.passport_max,
+        emergency_medical_max=plan.emergency_medical_max,
+        deductible=plan.deductible,
+        deductible_applies_to=json.loads(plan.deductible_applies_to_json),
+    )
+    return PolicyDetail(
+        policy_id=policy.policy_id,
+        customer_id=policy.customer_id,
+        plan=policy.plan,
+        add_ons=add_on_ids,
+        purchased_on=policy.purchased_on,
+        sold_through=policy.sold_through,
+        trip=TripDetails.model_validate(json.loads(policy.trip_json)),
+        travelers=json.loads(policy.travelers_json),
+        status=policy.status,
+        plan_details=plan_details,
+        add_on_details=add_on_details,
+    )
+
+
+def get_customer_detail(session: Session, customer_id: str) -> CustomerDetail:
+    """Return a customer profile and prior claim history."""
+    customer = session.scalar(
+        select(CustomerRecord).where(CustomerRecord.customer_id == customer_id)
+    )
+    if customer is None:
+        raise HTTPException(status_code=404, detail=f"Customer {customer_id} not found")
+    return CustomerDetail(
+        customer_id=customer.customer_id,
+        name=customer.name,
+        email=customer.email,
+        phone=customer.phone,
+        date_of_birth=customer.date_of_birth,
+        address=AddressDetails.model_validate(json.loads(customer.address_json)),
+        customer_since=customer.customer_since,
+        previous_claims=[
+            PreviousClaim.model_validate(c)
+            for c in json.loads(customer.previous_claims_json)
+        ],
+    )
+
+
+def list_handlers(session: Session) -> list[HandlerDetail]:
+    """Return all claims handlers ordered by handler ID."""
+    rows = session.scalars(select(HandlerRecord).order_by(HandlerRecord.handler_id))
+    return [
+        HandlerDetail(
+            handler_id=row.handler_id,
+            name=row.name,
+            role=row.role,
+            email=row.email,
+            can_approve_over_limit=row.can_approve_over_limit,
+        )
+        for row in rows
+    ]
+
+
+def get_policy_wording_doc(session: Session) -> PolicyWordingResponse:
+    """Return the active contractual policy wording."""
+    wording = session.scalar(select(PolicyWordingRecord))
+    if wording is None:
+        raise HTTPException(status_code=404, detail="Policy wording not found")
+    return PolicyWordingResponse(version=wording.version, content=wording.content)
+
+
+def get_instructions_doc(session: Session) -> InstructionsResponse:
+    """Return the read-only system prompt for the UnderCover Agent."""
+    record = session.scalar(
+        select(InstructionsRecord).where(InstructionsRecord.id == 1)
+    )
+    if record is None:
+        raise HTTPException(status_code=404, detail="Instructions not found")
+    return InstructionsResponse(instructions=record.instructions)
+
+
+def get_approval_limit(session: Session) -> float:
+    """Return the payout threshold above which handler sign-off is required."""
+    company = session.scalar(select(CompanyRecord).where(CompanyRecord.id == 1))
+    return company.payout_approval_limit if company is not None else 1000.0
+
+
+def prepare_claim_for_run(session: Session, claim_id: str) -> ClaimRecord:
+    """Reset steps and mark a claim in_progress before running the agent."""
+    claim = get_claim_or_404(session, claim_id)
+    session.execute(delete(ClaimStepRecord).where(ClaimStepRecord.claim_id == claim_id))
+    claim.status = "in_progress"
+    session.commit()
+    return claim
+
+
+def record_step(session: Session, claim_id: str, message: str) -> ClaimDetail:
+    """Append a step to a claim and mark waiting claims as in_progress."""
+    claim = get_claim_or_404(session, claim_id)
+    if claim.status == "waiting":
+        claim.status = "in_progress"
+    existing_steps = list(
+        session.scalars(
+            select(ClaimStepRecord)
+            .where(ClaimStepRecord.claim_id == claim_id)
+            .order_by(ClaimStepRecord.step_number)
+        )
+    )
+    next_number = len(existing_steps) + 1
+    session.add(
+        ClaimStepRecord(
+            claim_id=claim_id,
+            step_number=next_number,
+            message=message,
+            created_at=datetime.now(UTC).isoformat(),
+        )
+    )
+    session.commit()
+    return claim_to_detail(session, claim)
+
+
+def record_decision(
+    session: Session, claim_id: str, payload: DecisionRequest
+) -> ClaimDetail:
+    """Record the agent's decision on a claim and apply the $1,000 sign-off rule."""
+    claim = get_claim_or_404(session, claim_id)
+    limit = get_approval_limit(session)
+    claim.decision = payload.decision
+    claim.payout = payload.payout if payload.decision == "approve" else 0.0
+    claim.policy_section = payload.policy_section
+    claim.reason = payload.reason
+    claim.signed_off_by = None
+    claim.amount_paid = 0.0
+
+    if payload.decision == "approve" and payload.payout > limit:
+        claim.status = "waiting_for_sign_off"
+        claim.payment_status = "pending_sign_off"
+    else:
+        claim.status = "decided"
+        claim.payment_status = "unpaid"
+
+    session.commit()
+    return claim_to_detail(session, claim)
+
+
+def pay_claim_amount(session: Session, claim_id: str, amount: float) -> ClaimDetail:
+    """Pay an approved claim if within limit or already signed off by a handler."""
+    claim = get_claim_or_404(session, claim_id)
+    limit = get_approval_limit(session)
+    if claim.decision != "approve" or amount <= 0:
+        raise HTTPException(
+            status_code=409,
+            detail="Only approved claims with a positive amount can be paid.",
+        )
+    if claim.status == "waiting_for_sign_off" or (
+        amount > limit and not claim.signed_off_by
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="Payouts over $1,000 require a handler's sign-off before payment.",
+        )
+    claim.payment_status = "paid"
+    claim.amount_paid = amount
+    claim.status = "decided"
+    session.commit()
+    return claim_to_detail(session, claim)
+
+
+def sign_off_claim_payout(
+    session: Session, claim_id: str, handler_id: str
+) -> ClaimDetail:
+    """Record a handler's sign-off on an over-limit approval and release payment."""
+    claim = get_claim_or_404(session, claim_id)
+    handler = session.scalar(
+        select(HandlerRecord).where(HandlerRecord.handler_id == handler_id)
+    )
+    if handler is None or not handler.can_approve_over_limit:
+        raise HTTPException(
+            status_code=404, detail=f"Authorized handler {handler_id} not found"
+        )
+    if claim.status != "waiting_for_sign_off" or claim.decision != "approve":
+        raise HTTPException(
+            status_code=409,
+            detail="Claim is not awaiting handler sign-off.",
+        )
+    claim.signed_off_by = handler.handler_id
+    claim.payment_status = "paid"
+    claim.amount_paid = float(claim.payout or 0.0)
+    claim.status = "decided"
+    session.commit()
+    return claim_to_detail(session, claim)

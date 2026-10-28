@@ -79,18 +79,18 @@ Separating `decide_claim` (`POST /api/claims/{claim_id}/decision`) from `pay_cla
 
 ### Success Criteria
 
-- [ ] Every FastAPI route defines an explicit `operation_id`, a one-line docstring, `Annotated` dependency injection (`FAST002`), and no optional inputs.
-- [ ] `GET /api/claims` returns 25 claims in queue order with status `waiting`.
-- [ ] `GET /api/claims/CLM-1001` returns the full claim including `story`, `items`, `documents`, `amount_claimed`, `status`, and `steps`.
-- [ ] `GET /api/policies/POL-2001` returns the policy along with its resolved `plan_details` (`premium`) and `add_on_details`.
-- [ ] `GET /api/customers/CUS-3001` returns the customer details and `previous_claims`.
-- [ ] `GET /api/handlers` returns the 3 handlers from `data/handlers.json`.
-- [ ] `GET /api/policy-wording` returns `{ "version": "2026.1", "content": "# UnderCover Travel Insurance: Policy Wording..." }`.
-- [ ] `GET /api/instructions` returns `{ "instructions": "..." }` containing the read-only system prompt for the agent.
-- [ ] `POST /api/claims/CLM-1001/decision` with `{ "decision": "approve", "payout": 420.0, "policy_section": "Section 3: Trip Delay", "reason": "..." }` followed by `POST /api/claims/CLM-1001/pay` with `{ "amount": 420.0 }` transitions the claim to `status = "decided"` and `payment_status = "paid"`.
-- [ ] `POST /api/claims/CLM-1003/decision` with `{ "decision": "approve", "payout": 3750.0, "policy_section": "Section 7: Emergency Medical", "reason": "..." }` sets `status = "waiting_for_sign_off"` and `payment_status = "pending_sign_off"`. Calling `POST /api/claims/CLM-1003/pay` with `{ "amount": 3750.0 }` before sign-off returns HTTP `409` and does not mark the claim paid.
-- [ ] `POST /api/claims/CLM-1003/sign-off` with `{ "handler_id": "HND-01" }` transitions `CLM-1003` to `status = "decided"`, `payment_status = "paid"`, and records `signed_off_by = "HND-01"`.
-- [ ] Command `npm run check:python` passes with `>= 80%` test coverage.
+- [x] Every FastAPI route defines an explicit `operation_id`, a one-line docstring, `Annotated` dependency injection (`FAST002`), and no optional inputs.
+- [x] `GET /api/claims` returns 25 claims in queue order with status `waiting`.
+- [x] `GET /api/claims/CLM-1001` returns the full claim including `story`, `items`, `documents`, `amount_claimed`, `status`, and `steps`.
+- [x] `GET /api/policies/POL-2001` returns the policy along with its resolved `plan_details` (`premium`) and `add_on_details`.
+- [x] `GET /api/customers/CUS-3001` returns the customer details and `previous_claims`.
+- [x] `GET /api/handlers` returns the 3 handlers from `data/handlers.json`.
+- [x] `GET /api/policy-wording` returns `{ "version": "2026.1", "content": "# UnderCover Travel Insurance: Policy Wording..." }`.
+- [x] `GET /api/instructions` returns `{ "instructions": "..." }` containing the read-only system prompt for the agent.
+- [x] `POST /api/claims/CLM-1001/decision` with `{ "decision": "approve", "payout": 420.0, "policy_section": "Section 3: Trip Delay", "reason": "..." }` followed by `POST /api/claims/CLM-1001/pay` with `{ "amount": 420.0 }` transitions the claim to `status = "decided"` and `payment_status = "paid"`.
+- [x] `POST /api/claims/CLM-1003/decision` with `{ "decision": "approve", "payout": 3750.0, "policy_section": "Section 7: Emergency Medical", "reason": "..." }` sets `status = "waiting_for_sign_off"` and `payment_status = "pending_sign_off"`. Calling `POST /api/claims/CLM-1003/pay` with `{ "amount": 3750.0 }` before sign-off returns HTTP `409` and does not mark the claim paid.
+- [x] `POST /api/claims/CLM-1003/sign-off` with `{ "handler_id": "HND-01" }` transitions `CLM-1003` to `status = "decided"`, `payment_status = "paid"`, and records `signed_off_by = "HND-01"`.
+- [x] Command `npm run check:python` passes with `>= 80%` test coverage.
 
 ---
 
