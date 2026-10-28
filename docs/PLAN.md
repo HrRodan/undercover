@@ -146,10 +146,10 @@ Building the typed API client, brand tokens, and queue table as modular componen
 
 ### Success Criteria
 
-- [ ] Component tests verify `ClaimsQueue` renders claims with formatted USD amounts (`$420.00`), claim IDs and policy IDs in monospace, and semantic badges for `Waiting`, `In progress`, `Waiting for sign-off`, and `Decided`.
-- [ ] Component tests verify filtering the queue by status (`waiting`, `in_progress`, `waiting_for_sign_off`, `decided`).
-- [ ] No emojis appear anywhere in the UI or source files, and all interactive elements pass `eslint-plugin-jsx-a11y-x` checks.
-- [ ] Command `npm run check:ts` passes `prettier`, `eslint`, `tsc`, and `vitest` with `>= 80%` coverage.
+- [x] Component tests verify `ClaimsQueue` renders claims with formatted USD amounts (`$420.00`), claim IDs and policy IDs in monospace, and semantic badges for `Waiting`, `In progress`, `Waiting for sign-off`, and `Decided`.
+- [x] Component tests verify filtering the queue by status (`waiting`, `in_progress`, `waiting_for_sign_off`, `decided`).
+- [x] No emojis appear anywhere in the UI or source files, and all interactive elements pass `eslint-plugin-jsx-a11y-x` checks.
+- [x] Command `npm run check:ts` passes `prettier`, `eslint`, `tsc`, and `vitest` with `>= 80%` coverage.
 
 ---
 

@@ -7,22 +7,12 @@
   - `backend/db.py`: SQLAlchemy engine, `get_session` dependency, and idempotent seed loader for `company.json`, `plans.json`, `policies.json`, `customers.json`, `handlers.json`, `claims.json`, `policy_wording.md`, and read-only agent instructions.
   - `backend/schemas.py`: Typed Pydantic request and response models.
 - **Phase 2 — Backend Read, Decision, Payment & Sign-Off API**:
-  - `backend/main.py`: FastAPI routes with explicit `operation_id`s:
-    - `GET /api/health` (`health`)
-    - `GET /api/claims` (`list_claims`)
-    - `GET /api/claims/{claim_id}` (`get_claim`)
-    - `GET /api/policies/{policy_id}` (`get_policy`)
-    - `GET /api/customers/{customer_id}` (`get_customer`)
-    - `GET /api/handlers` (`list_handlers`)
-    - `GET /api/policy-wording` (`get_policy_wording`)
-    - `GET /api/instructions` (`get_instructions`)
-    - `POST /api/claims/{claim_id}/steps` (`record_claim_step`)
-    - `POST /api/claims/{claim_id}/decision` (`decide_claim`)
-    - `POST /api/claims/{claim_id}/pay` (`pay_claim`) — blocks payouts over $1,000 until handler sign-off
-    - `POST /api/claims/{claim_id}/sign-off` (`sign_off_claim`)
+  - `backend/main.py`: FastAPI routes with explicit `operation_id`s (`health`, `list_claims`, `get_claim`, `get_policy`, `get_customer`, `list_handlers`, `get_policy_wording`, `get_instructions`, `record_claim_step`, `decide_claim`, `pay_claim`, `sign_off_claim`).
 - **Phase 3 — The UnderCover Agent & Backend Run Trigger**:
-  - `agent/main.py`: LangChain `create_agent` entry point `run(claim_id, thread_id, llm=None)` on OpenRouter (`openai/gpt-6-luna` with `reasoning_effort="low"` by default, or `MODEL_NAME`), fetching its system prompt from `GET /api/instructions` and logging step-by-step progress via tools (`check_backend`, `get_claim`, `get_policy`, `get_customer`, `get_policy_wording`, `decide_claim`, `pay_claim`).
+  - `agent/main.py`: LangChain `create_agent` entry point `run(claim_id, thread_id, llm=None)` on OpenRouter (`openai/gpt-6-luna` with `reasoning_effort="low"` by default, or `MODEL_NAME`), fetching its system prompt from `GET /api/instructions` and logging step-by-step progress via tools.
   - `backend/main.py`: `POST /api/claims/{claim_id}/run` (`run_claim_agent`).
-  - `agent/tests/test_agent.py`: Unit tests with `StubModel` covering under-limit approvals, over-$1,000 sign-off holds, and step logging.
-- `dashboard/`: status page
+- **Phase 4 — Dashboard Foundation, Brand Theme & Claims Queue**:
+  - `dashboard/index.html` & `dashboard/src/styles.css`: Nordic Obsidian & Precision Daylight theme (`Space Grotesk`, `Plus Jakarta Sans`, `Fraunces`, `Geist Mono`) with light and dark surface custom properties.
+  - `dashboard/src/types.ts` & `dashboard/src/api.ts`: Strict TypeScript models and API client.
+  - `dashboard/src/components/StatusBadge.tsx` & `dashboard/src/components/ClaimsQueue.tsx`: Semantic status/decision badges and filterable claims queue table with tabular USD currency columns.
 - `e2e/`: Playwright smoke test
