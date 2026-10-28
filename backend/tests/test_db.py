@@ -91,6 +91,7 @@ def test_init_db_is_idempotent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
 
     db.init_db()
     db.init_db()
+    db.reset_db()
 
     session_gen = db.get_session()
     session = next(session_gen)

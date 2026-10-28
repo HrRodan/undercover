@@ -232,3 +232,11 @@ def test_run_claim_agent_endpoint(
     assert data["amount_paid"] == 420.0
     assert len(data["steps"]) == 1
     assert data["steps"][0]["message"] == "Reading claim CLM-1001"
+
+    reset_res = api_client.post("/api/claims/reset")
+    assert reset_res.status_code == 200
+    reset_claims = reset_res.json()
+    assert len(reset_claims) == 25
+    assert reset_claims[0]["status"] == "waiting"
+    assert reset_claims[0]["decision"] is None
+    assert api_client.get("/api/claims/CLM-1001").json()["steps"] == []

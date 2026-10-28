@@ -281,6 +281,30 @@ def get_session() -> Generator[Session, None, None]:
         yield session
 
 
+def reset_db(engine: Engine | None = None) -> None:
+    """Drop all database tables and re-seed initial operational records."""
+    target_engine = engine or get_engine()
+    with _INIT_LOCK:
+        Base.metadata.drop_all(target_engine)
+    init_db(target_engine)
+
+
+def reset_claims(session: Session) -> list[ClaimSummary]:
+    """Reset all claims and steps back to their initial waiting state."""
+    session.execute(delete(ClaimStepRecord))
+    for claim in session.scalars(select(ClaimRecord)):
+        claim.status = "waiting"
+        claim.decision = None
+        claim.payout = None
+        claim.policy_section = None
+        claim.reason = None
+        claim.payment_status = "unpaid"
+        claim.amount_paid = 0.0
+        claim.signed_off_by = None
+    session.commit()
+    return list_claims(session)
+
+
 def claim_to_summary(row: ClaimRecord) -> ClaimSummary:
     """Convert a ClaimRecord ORM row into a ClaimSummary schema."""
     return ClaimSummary(
@@ -581,3 +605,7 @@ def sign_off_claim_payout(
     claim.status = "decided"
     session.commit()
     return claim_to_detail(session, claim)
+
+
+if __name__ == "__main__":  # pragma: no cover
+    reset_db()

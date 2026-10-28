@@ -228,6 +228,7 @@ const SAMPLE_HANDLERS: HandlerDetail[] = [
 
 const MOCK_ROUTES: Record<string, unknown> = {
   "GET /api/claims": SAMPLE_CLAIMS,
+  "POST /api/claims/reset": SAMPLE_CLAIMS,
   "GET /api/handlers": SAMPLE_HANDLERS,
   "GET /api/instructions": {
     instructions: "You are the UnderCover Agent. Follow the wording.",
@@ -296,6 +297,14 @@ it("loads the queue, displays full claim details, runs the agent, and shows step
   expect(
     await screen.findByText("Recording decision: approve ($420.00)"),
   ).toBeDefined();
+
+  const resetBtn = screen.getByRole("button", { name: "Reset Queue" });
+  fireEvent.click(resetBtn);
+  await waitFor(() => {
+    expect(mockFetch).toHaveBeenCalledWith("/api/claims/reset", {
+      method: "POST",
+    });
+  });
 });
 
 it("allows handler sign-off on a claim over $1,000 and switches to Agent Instructions", async () => {

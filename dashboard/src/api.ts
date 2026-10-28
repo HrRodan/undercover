@@ -70,6 +70,12 @@ export async function triggerClaimAgent(claimId: string): Promise<ClaimDetail> {
   });
 }
 
+export async function resetAllClaims(): Promise<ClaimSummary[]> {
+  return requestJson<ClaimSummary[]>("/api/claims/reset", {
+    method: "POST",
+  });
+}
+
 export async function signOffClaim(
   claimId: string,
   handlerId: string,

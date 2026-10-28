@@ -7,6 +7,7 @@ import {
   fetchInstructions,
   fetchPolicyDetail,
   fetchPolicyWording,
+  resetAllClaims,
   signOffClaim,
   triggerClaimAgent,
 } from "./api";
@@ -166,8 +167,7 @@ export function App() {
     void triggerClaimAgent(claimId)
       .then(async (updated) => {
         setClaimDetail(updated);
-        const refreshedQueue = await fetchClaims();
-        setClaims(refreshedQueue);
+        setClaims(await fetchClaims());
       })
       .catch(() => {
         setErrorMessage(`Failed to run agent on ${claimId}`);
@@ -214,6 +214,20 @@ export function App() {
       });
   };
 
+  const handleResetQueue = () => {
+    setErrorMessage(null);
+    void resetAllClaims()
+      .then(async (resetQueue) => {
+        setClaims(resetQueue);
+        if (selectedClaimId) {
+          await loadSelectedClaimBundle(selectedClaimId);
+        }
+      })
+      .catch(() => {
+        setErrorMessage("Failed to reset claims queue");
+      });
+  };
+
   return (
     <div className="app-shell">
       <Topbar
@@ -239,6 +253,7 @@ export function App() {
               isRunningQueue={isRunningQueue}
               onSelectClaim={handleSelectClaim}
               onRunAllWaiting={handleRunAllWaiting}
+              onResetQueue={handleResetQueue}
             />
             <ClaimDetail
               claim={claimDetail}

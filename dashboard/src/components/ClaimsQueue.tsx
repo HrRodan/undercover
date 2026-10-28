@@ -19,6 +19,7 @@ export interface ClaimsQueueProps {
   isRunningQueue: boolean;
   onSelectClaim: (claimId: string) => void;
   onRunAllWaiting: () => void;
+  onResetQueue: () => void;
 }
 
 export function ClaimsQueue({
@@ -27,6 +28,7 @@ export function ClaimsQueue({
   isRunningQueue,
   onSelectClaim,
   onRunAllWaiting,
+  onResetQueue,
 }: Readonly<ClaimsQueueProps>) {
   const [filter, setFilter] = useState<FilterValue>("all");
 
@@ -51,16 +53,26 @@ export function ClaimsQueue({
             {String(claims.length)} total claims in queue
           </p>
         </div>
-        <button
-          type="button"
-          className="btn-primary"
-          disabled={isRunningQueue || waitingCount === 0}
-          onClick={onRunAllWaiting}
-        >
-          {isRunningQueue
-            ? "Running Queue..."
-            : `Run All Waiting (${String(waitingCount)})`}
-        </button>
+        <div className="topbar-controls">
+          <button
+            type="button"
+            className="btn-secondary"
+            disabled={isRunningQueue}
+            onClick={onResetQueue}
+          >
+            Reset Queue
+          </button>
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={isRunningQueue || waitingCount === 0}
+            onClick={onRunAllWaiting}
+          >
+            {isRunningQueue
+              ? "Running Queue..."
+              : `Run All Waiting (${String(waitingCount)})`}
+          </button>
+        </div>
       </div>
 
       <div className="metrics-row">

@@ -116,3 +116,9 @@ def run_claim_agent(claim_id: str, session: DbSession) -> ClaimDetail:
     invoke_claim_agent(claim_id)
     session.expire_all()
     return db.get_claim_detail(session, claim_id)
+
+
+@app.post("/api/claims/reset", operation_id="reset_claims")
+def reset_claims(session: DbSession) -> list[ClaimSummary]:
+    """Reset all claims and steps in the queue back to their waiting state."""
+    return db.reset_claims(session)
