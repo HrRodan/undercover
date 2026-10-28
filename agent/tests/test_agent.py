@@ -201,3 +201,26 @@ def test_model_name_and_backend_client(monkeypatch: pytest.MonkeyPatch) -> None:
     assert main.model().model_name == "openai/gpt-6-luna"
     monkeypatch.setenv("MODEL_NAME", "openrouter/free")
     assert main.model().model_name == "openrouter/free"
+
+
+def test_tools_recover_from_wrong_id_and_normalize_decision(
+    isolated_backend: TestClient,
+) -> None:
+    """Verify tool error recovery on 404 and decision normalization."""
+    pol_err = main.get_policy.invoke({"policy_id": "CLM-1001"})
+    assert "error" in pol_err
+
+    cus_err = main.get_customer.invoke({"customer_id": "CLM-1001"})
+    assert "error" in cus_err
+
+    dec = main.decide_claim.invoke(
+        {
+            "claim_id": "CLM-1001",
+            "decision": "Approved",
+            "payout": 420.0,
+            "policy_section": "Section 3: Trip Delay",
+            "reason": "Covered delay.",
+        }
+    )
+    assert dec["decision"] == "approve"
+    assert dec["status"] == "decided"

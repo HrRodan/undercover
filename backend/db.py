@@ -53,9 +53,10 @@ DEFAULT_INSTRUCTIONS = "\n".join(
         "UnderCover Travel Insurance.",
         "",
         "For every claim you handle:",
-        "1. Read the claim with `get_claim`, the customer's policy with `get_policy`, "
-        "the customer's profile and prior claims with `get_customer`, and the "
-        "contract wording with `get_policy_wording`.",
+        "1. First call `get_claim` with the `claim_id` to read the claim and get its "
+        "`policy_id` (such as `POL-2001`) and `customer_id` (such as `CUS-3001`). "
+        "Then call `get_policy` with that `policy_id`, `get_customer` with that "
+        "`customer_id`, and `get_policy_wording`.",
         "2. Decide whether to `approve`, `decline`, or `refer` the claim strictly "
         "according to the Policy Wording (Version 2026.1):",
         "   - Check that the incident happened during the covered trip dates on the "
@@ -100,6 +101,7 @@ DEFAULT_INSTRUCTIONS = "\n".join(
 
 _ENGINES: dict[str, Engine] = {}
 _INIT_LOCK = threading.Lock()
+_WRITE_LOCK = threading.RLock()
 
 
 def get_db_path() -> Path:
@@ -113,7 +115,9 @@ def get_engine() -> Engine:
     url = f"sqlite:///{db_path}"
     if url not in _ENGINES:
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        _ENGINES[url] = create_engine(url, connect_args={"check_same_thread": False})
+        _ENGINES[url] = create_engine(
+            url, connect_args={"check_same_thread": False, "timeout": 30}
+        )
     return _ENGINES[url]
 
 
@@ -291,18 +295,29 @@ def reset_db(engine: Engine | None = None) -> None:
 
 def reset_claims(session: Session) -> list[ClaimSummary]:
     """Reset all claims and steps back to their initial waiting state."""
-    session.execute(delete(ClaimStepRecord))
-    for claim in session.scalars(select(ClaimRecord)):
-        claim.status = "waiting"
-        claim.decision = None
-        claim.payout = None
-        claim.policy_section = None
-        claim.reason = None
-        claim.payment_status = "unpaid"
-        claim.amount_paid = 0.0
-        claim.signed_off_by = None
-    session.commit()
-    return list_claims(session)
+    with _WRITE_LOCK:
+        session.execute(delete(ClaimStepRecord))
+        for claim in session.scalars(select(ClaimRecord)):
+            claim.status = "waiting"
+            claim.decision = None
+            claim.payout = None
+            claim.policy_section = None
+            claim.reason = None
+            claim.payment_status = "unpaid"
+            claim.amount_paid = 0.0
+            claim.signed_off_by = None
+        session.commit()
+        return list_claims(session)
+
+
+def update_instructions_if_default(session: Session) -> None:
+    """Keep the stored default instructions current with DEFAULT_INSTRUCTIONS."""
+    record = session.scalar(
+        select(InstructionsRecord).where(InstructionsRecord.id == 1)
+    )
+    if record is not None and record.instructions != DEFAULT_INSTRUCTIONS:
+        record.instructions = DEFAULT_INSTRUCTIONS
+        session.commit()
 
 
 def claim_to_summary(row: ClaimRecord) -> ClaimSummary:
@@ -496,115 +511,125 @@ def get_approval_limit(session: Session) -> float:
 
 def prepare_claim_for_run(session: Session, claim_id: str) -> ClaimRecord:
     """Reset steps and decision fields and mark a claim in_progress."""
-    claim = get_claim_or_404(session, claim_id)
-    session.execute(delete(ClaimStepRecord).where(ClaimStepRecord.claim_id == claim_id))
-    claim.status = "in_progress"
-    claim.decision = None
-    claim.payout = None
-    claim.policy_section = None
-    claim.reason = None
-    claim.payment_status = "unpaid"
-    claim.amount_paid = 0.0
-    claim.signed_off_by = None
-    session.commit()
-    return claim
+    with _WRITE_LOCK:
+        update_instructions_if_default(session)
+        claim = get_claim_or_404(session, claim_id)
+        session.execute(
+            delete(ClaimStepRecord).where(ClaimStepRecord.claim_id == claim_id)
+        )
+        claim.status = "in_progress"
+        claim.decision = None
+        claim.payout = None
+        claim.policy_section = None
+        claim.reason = None
+        claim.payment_status = "unpaid"
+        claim.amount_paid = 0.0
+        claim.signed_off_by = None
+        session.commit()
+        return claim
 
 
 def record_step(session: Session, claim_id: str, message: str) -> ClaimDetail:
     """Append a step to a claim and mark waiting claims as in_progress."""
-    claim = get_claim_or_404(session, claim_id)
-    if claim.status == "waiting":
-        claim.status = "in_progress"
-    existing_steps = list(
-        session.scalars(
-            select(ClaimStepRecord)
-            .where(ClaimStepRecord.claim_id == claim_id)
-            .order_by(ClaimStepRecord.step_number)
+    with _WRITE_LOCK:
+        claim = get_claim_or_404(session, claim_id)
+        if claim.status == "waiting":
+            claim.status = "in_progress"
+        existing_steps = list(
+            session.scalars(
+                select(ClaimStepRecord)
+                .where(ClaimStepRecord.claim_id == claim_id)
+                .order_by(ClaimStepRecord.step_number)
+            )
         )
-    )
-    next_number = len(existing_steps) + 1
-    session.add(
-        ClaimStepRecord(
-            claim_id=claim_id,
-            step_number=next_number,
-            message=message,
-            created_at=datetime.now(UTC).isoformat(),
+        next_number = len(existing_steps) + 1
+        session.add(
+            ClaimStepRecord(
+                claim_id=claim_id,
+                step_number=next_number,
+                message=message,
+                created_at=datetime.now(UTC).isoformat(),
+            )
         )
-    )
-    session.commit()
-    return claim_to_detail(session, claim)
+        session.commit()
+        return claim_to_detail(session, claim)
 
 
 def record_decision(
     session: Session, claim_id: str, payload: DecisionRequest
 ) -> ClaimDetail:
     """Record the agent's decision on a claim and apply the $1,000 sign-off rule."""
-    claim = get_claim_or_404(session, claim_id)
-    limit = get_approval_limit(session)
-    claim.decision = payload.decision
-    claim.payout = payload.payout if payload.decision == "approve" else 0.0
-    claim.policy_section = payload.policy_section
-    claim.reason = payload.reason
-    claim.signed_off_by = None
-    claim.amount_paid = 0.0
+    with _WRITE_LOCK:
+        claim = get_claim_or_404(session, claim_id)
+        limit = get_approval_limit(session)
+        claim.decision = payload.decision
+        claim.payout = payload.payout if payload.decision == "approve" else 0.0
+        claim.policy_section = payload.policy_section
+        claim.reason = payload.reason
+        claim.signed_off_by = None
+        claim.amount_paid = 0.0
 
-    if payload.decision == "approve" and payload.payout > limit:
-        claim.status = "waiting_for_sign_off"
-        claim.payment_status = "pending_sign_off"
-    else:
-        claim.status = "decided"
-        claim.payment_status = "unpaid"
+        if payload.decision == "approve" and payload.payout > limit:
+            claim.status = "waiting_for_sign_off"
+            claim.payment_status = "pending_sign_off"
+        else:
+            claim.status = "decided"
+            claim.payment_status = "unpaid"
 
-    session.commit()
-    return claim_to_detail(session, claim)
+        session.commit()
+        return claim_to_detail(session, claim)
 
 
 def pay_claim_amount(session: Session, claim_id: str, amount: float) -> ClaimDetail:
     """Pay an approved claim if within limit or already signed off by a handler."""
-    claim = get_claim_or_404(session, claim_id)
-    limit = get_approval_limit(session)
-    if claim.decision != "approve" or amount <= 0:
-        raise HTTPException(
-            status_code=409,
-            detail="Only approved claims with a positive amount can be paid.",
-        )
-    if claim.status == "waiting_for_sign_off" or (
-        amount > limit and not claim.signed_off_by
-    ):
-        raise HTTPException(
-            status_code=409,
-            detail="Payouts over $1,000 require a handler's sign-off before payment.",
-        )
-    claim.payment_status = "paid"
-    claim.amount_paid = amount
-    claim.status = "decided"
-    session.commit()
-    return claim_to_detail(session, claim)
+    with _WRITE_LOCK:
+        claim = get_claim_or_404(session, claim_id)
+        limit = get_approval_limit(session)
+        if claim.decision != "approve" or amount <= 0:
+            raise HTTPException(
+                status_code=409,
+                detail="Only approved claims with a positive amount can be paid.",
+            )
+        if claim.status == "waiting_for_sign_off" or (
+            amount > limit and not claim.signed_off_by
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Payouts over $1,000 require a handler's sign-off before payment."
+                ),
+            )
+        claim.payment_status = "paid"
+        claim.amount_paid = amount
+        claim.status = "decided"
+        session.commit()
+        return claim_to_detail(session, claim)
 
 
 def sign_off_claim_payout(
     session: Session, claim_id: str, handler_id: str
 ) -> ClaimDetail:
     """Record a handler's sign-off on an over-limit approval and release payment."""
-    claim = get_claim_or_404(session, claim_id)
-    handler = session.scalar(
-        select(HandlerRecord).where(HandlerRecord.handler_id == handler_id)
-    )
-    if handler is None or not handler.can_approve_over_limit:
-        raise HTTPException(
-            status_code=404, detail=f"Authorized handler {handler_id} not found"
+    with _WRITE_LOCK:
+        claim = get_claim_or_404(session, claim_id)
+        handler = session.scalar(
+            select(HandlerRecord).where(HandlerRecord.handler_id == handler_id)
         )
-    if claim.status != "waiting_for_sign_off" or claim.decision != "approve":
-        raise HTTPException(
-            status_code=409,
-            detail="Claim is not awaiting handler sign-off.",
-        )
-    claim.signed_off_by = handler.handler_id
-    claim.payment_status = "paid"
-    claim.amount_paid = float(claim.payout or 0.0)
-    claim.status = "decided"
-    session.commit()
-    return claim_to_detail(session, claim)
+        if handler is None or not handler.can_approve_over_limit:
+            raise HTTPException(
+                status_code=404, detail=f"Authorized handler {handler_id} not found"
+            )
+        if claim.status != "waiting_for_sign_off" or claim.decision != "approve":
+            raise HTTPException(
+                status_code=409,
+                detail="Claim is not awaiting handler sign-off.",
+            )
+        claim.signed_off_by = handler.handler_id
+        claim.payment_status = "paid"
+        claim.amount_paid = float(claim.payout or 0.0)
+        claim.status = "decided"
+        session.commit()
+        return claim_to_detail(session, claim)
 
 
 if __name__ == "__main__":  # pragma: no cover

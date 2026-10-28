@@ -19,6 +19,15 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 DEFAULT_MODEL = "openai/gpt-6-luna"
 HTTP_CONFLICT = 409
 
+_DECISION_ALIASES: dict[str, str] = {
+    "approve": "approve",
+    "approved": "approve",
+    "decline": "decline",
+    "declined": "decline",
+    "refer": "refer",
+    "referred": "refer",
+}
+
 _ACTIVE_CLAIM_ID: ContextVar[str | None] = ContextVar("_ACTIVE_CLAIM_ID", default=None)
 
 
@@ -50,7 +59,7 @@ def check_backend() -> str:
 
 @tool
 def get_claim(claim_id: str) -> dict[str, Any]:
-    """Fetch the full claim record including story, items, and documents."""
+    """Fetch the claim record including policy_id, customer_id, and story."""
     _ACTIVE_CLAIM_ID.set(claim_id)
     with backend() as client:
         _log_step(client, f"Reading claim {claim_id}", claim_id)
@@ -62,22 +71,34 @@ def get_claim(claim_id: str) -> dict[str, Any]:
 
 @tool
 def get_policy(policy_id: str) -> dict[str, Any]:
-    """Fetch the policy record along with plan limits and add-on details."""
+    """Fetch the policy record by policy_id (such as POL-2001) and plan limits."""
     with backend() as client:
-        _log_step(client, f"Checking policy {policy_id} and plan limits")
         response = client.get(f"/api/policies/{policy_id}")
-    response.raise_for_status()
+        if response.is_error:
+            return {
+                "error": (
+                    f"Policy {policy_id} not found. Call get_claim first and pass "
+                    "its policy_id (such as POL-2001)."
+                )
+            }
+        _log_step(client, f"Checking policy {policy_id} and plan limits")
     data: dict[str, Any] = response.json()
     return data
 
 
 @tool
 def get_customer(customer_id: str) -> dict[str, Any]:
-    """Fetch the customer profile and prior claim history."""
+    """Fetch the customer profile and prior claims by customer_id (CUS-3001)."""
     with backend() as client:
-        _log_step(client, f"Reviewing customer claim history for {customer_id}")
         response = client.get(f"/api/customers/{customer_id}")
-    response.raise_for_status()
+        if response.is_error:
+            return {
+                "error": (
+                    f"Customer {customer_id} not found. Call get_claim first and "
+                    "pass its customer_id (such as CUS-3001)."
+                )
+            }
+        _log_step(client, f"Reviewing customer claim history for {customer_id}")
     data: dict[str, Any] = response.json()
     return data
 
@@ -103,16 +124,19 @@ def decide_claim(
 ) -> dict[str, Any]:
     """Record the decision, payout amount, policy section, and explanation."""
     _ACTIVE_CLAIM_ID.set(claim_id)
+    normalized = _DECISION_ALIASES.get(
+        decision.strip().lower(), decision.strip().lower()
+    )
     with backend() as client:
         _log_step(
             client,
-            f"Recording decision: {decision} (${payout:,.2f})",
+            f"Recording decision: {normalized} (${payout:,.2f})",
             claim_id,
         )
         response = client.post(
             f"/api/claims/{claim_id}/decision",
             json={
-                "decision": decision,
+                "decision": normalized,
                 "payout": payout,
                 "policy_section": policy_section,
                 "reason": reason,

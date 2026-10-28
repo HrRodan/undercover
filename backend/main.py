@@ -113,9 +113,16 @@ def invoke_claim_agent(claim_id: str) -> None:
 def run_claim_agent(claim_id: str, session: DbSession) -> ClaimDetail:
     """Reset steps, mark a claim in progress, and run the UnderCover Agent."""
     db.prepare_claim_for_run(session, claim_id)
+    session.close()
     invoke_claim_agent(claim_id)
     session.expire_all()
-    return db.get_claim_detail(session, claim_id)
+    detail = db.get_claim_detail(session, claim_id)
+    if detail.status == "in_progress" and detail.decision is None:
+        claim = db.get_claim_or_404(session, claim_id)
+        claim.status = "waiting"
+        session.commit()
+        return db.get_claim_detail(session, claim_id)
+    return detail
 
 
 @app.post("/api/claims/reset", operation_id="reset_claims")
