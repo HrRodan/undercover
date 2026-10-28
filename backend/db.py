@@ -471,10 +471,17 @@ def get_approval_limit(session: Session) -> float:
 
 
 def prepare_claim_for_run(session: Session, claim_id: str) -> ClaimRecord:
-    """Reset steps and mark a claim in_progress before running the agent."""
+    """Reset steps and decision fields and mark a claim in_progress."""
     claim = get_claim_or_404(session, claim_id)
     session.execute(delete(ClaimStepRecord).where(ClaimStepRecord.claim_id == claim_id))
     claim.status = "in_progress"
+    claim.decision = None
+    claim.payout = None
+    claim.policy_section = None
+    claim.reason = None
+    claim.payment_status = "unpaid"
+    claim.amount_paid = 0.0
+    claim.signed_off_by = None
     session.commit()
     return claim
 

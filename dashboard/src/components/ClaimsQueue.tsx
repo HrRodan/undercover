@@ -16,13 +16,17 @@ const FILTER_OPTIONS: { value: FilterValue; label: string }[] = [
 export interface ClaimsQueueProps {
   claims: ClaimSummary[];
   selectedClaimId: string | null;
+  isRunningQueue: boolean;
   onSelectClaim: (claimId: string) => void;
+  onRunAllWaiting: () => void;
 }
 
 export function ClaimsQueue({
   claims,
   selectedClaimId,
+  isRunningQueue,
   onSelectClaim,
+  onRunAllWaiting,
 }: Readonly<ClaimsQueueProps>) {
   const [filter, setFilter] = useState<FilterValue>("all");
 
@@ -47,6 +51,16 @@ export function ClaimsQueue({
             {String(claims.length)} total claims in queue
           </p>
         </div>
+        <button
+          type="button"
+          className="btn-primary"
+          disabled={isRunningQueue || waitingCount === 0}
+          onClick={onRunAllWaiting}
+        >
+          {isRunningQueue
+            ? "Running Queue..."
+            : `Run All Waiting (${String(waitingCount)})`}
+        </button>
       </div>
 
       <div className="metrics-row">

@@ -40,9 +40,12 @@ test("displays the 25-claim queue, full claim details, steps, over-limit sign-of
 
   await page.getByRole("button", { name: "CLM-1001" }).click();
   await expect(
-    page.getByText("Reading claim CLM-1001 and verifying carrier delay"),
+    page
+      .getByText("Reading claim CLM-1001 and verifying carrier delay")
+      .first(),
   ).toBeVisible();
   await expect(page.getByText("Section 3: Trip Delay")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Rerun Agent" })).toBeVisible();
 
   const overLimitDec = await request.post("/api/claims/CLM-1003/decision", {
     data: {

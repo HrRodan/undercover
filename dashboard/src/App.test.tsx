@@ -278,8 +278,10 @@ it("loads the queue, displays full claim details, runs the agent, and shows step
   expect(formatUsd(420)).toBe("$420.00");
   expect(formatClaimType("trip_delay")).toBe("Trip Delay");
 
-  const runBtn = screen.getByRole("button", { name: "Run Agent" });
-  fireEvent.click(runBtn);
+  const runAllBtn = screen.getByRole("button", {
+    name: "Run All Waiting (1)",
+  });
+  fireEvent.click(runAllBtn);
 
   expect(
     await screen.findByText("Recording decision: approve ($420.00)"),
@@ -288,6 +290,12 @@ it("loads the queue, displays full claim details, runs the agent, and shows step
     screen.getByText("Covered 19-hour delay under Section 3."),
   ).toBeDefined();
   expect(screen.getByText("Section 3: Trip Delay")).toBeDefined();
+
+  const rerunBtn = await screen.findByRole("button", { name: "Rerun Agent" });
+  fireEvent.click(rerunBtn);
+  expect(
+    await screen.findByText("Recording decision: approve ($420.00)"),
+  ).toBeDefined();
 });
 
 it("allows handler sign-off on a claim over $1,000 and switches to Agent Instructions", async () => {

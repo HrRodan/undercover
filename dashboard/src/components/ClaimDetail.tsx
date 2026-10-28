@@ -224,6 +224,18 @@ export function ClaimDetail({
     );
   }
 
+  const isBusy = isRunning || claim.status === "in_progress";
+  const hasRunBefore =
+    claim.decision !== null ||
+    claim.status === "decided" ||
+    claim.status === "waiting_for_sign_off";
+  let runButtonLabel = "Run Agent";
+  if (isBusy) {
+    runButtonLabel = "Running Agent...";
+  } else if (hasRunBefore) {
+    runButtonLabel = "Rerun Agent";
+  }
+
   return (
     <section className="panel" aria-label="Claim Detail">
       <div className="panel-header">
@@ -241,14 +253,12 @@ export function ClaimDetail({
           <button
             type="button"
             className="btn-primary"
-            disabled={isRunning || claim.status === "in_progress"}
+            disabled={isBusy}
             onClick={() => {
               onRunAgent(claim.claim_id);
             }}
           >
-            {isRunning || claim.status === "in_progress"
-              ? "Running Agent..."
-              : "Run Agent"}
+            {runButtonLabel}
           </button>
         </div>
       </div>
