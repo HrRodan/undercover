@@ -1,36 +1,54 @@
-# Brand
+/# Brand
+
+## Aesthetic Direction
+
+**Nordic Obsidian & Precision Daylight** — an executive fintech aesthetic inspired by high-craft operational tools. Crisp typographic hierarchy, tactile surface elevation with hairline borders, and high-contrast semantic accents built for long claims-handling sessions in both light and dark environments.
 
 ## Fonts
 
 From Google Fonts:
 
-- **Headings and body**: Instrument Sans
-- **Accent (a tagline or a quote)**: Instrument Serif
-- **Code, numbers and identifiers**: JetBrains Mono
+- **Headings**: Space Grotesk (weights 600, 700; tight tracking `-0.02em`)
+- **Body and UI controls**: Plus Jakarta Sans (weights 400, 500, 600)
+- **Accent (editorial callouts, quotes or empty-state headers)**: Fraunces (italic, optical size auto)
+- **Code, policy IDs, claim numbers and currency amounts**: Geist Mono (`font-variant-numeric: tabular-nums`)
 
 ## Colors
 
-- **Primary**: Sea Green `#06D6A0`, Midnight text
-- **Secondary**: Marigold `#FFC145`, Midnight text
-- **Tertiary**: Coral `#F78C6B`, Midnight text
-- **Information**: Cerulean `#118AB2`, white text
-- **Highlight or alert**: Raspberry `#EF476F`, white text
-- **Ink on light backgrounds**: Midnight `#073B4C`
-- **Ink on dark backgrounds**: Sea Mist `#CDD8DB`
+- **Primary (Brand & active actions)**: Electric Indigo `#6366F1` (hover `#4F46E5`), white text
+- **Secondary (Approved / positive state)**: Jade Emerald `#10B981`, Obsidian `#090D16` text on fills; darkened to `#047857` for text on light surfaces
+- **Tertiary (Pending / waiting for sign-off / warning)**: Amber Gold `#F59E0B`, Obsidian `#090D16` text on fills; darkened to `#B45309` for text on light surfaces
+- **Information (In progress / referred / neutral state)**: Sky Cyan `#0EA5E9`, white text on fills; darkened to `#0369A1` for text on light surfaces
+- **Highlight or alert (Declined / security flag / destructive)**: Crimson Rose `#F43F5E`, white text
+- **Ink on light backgrounds**: Obsidian Slate `#0F172A` (primary), Muted Slate `#475569` (secondary)
+- **Ink on dark backgrounds**: Polar Mist `#F1F5F9` (primary), Cool Ash `#94A3B8` (secondary)
 
-Use Sea Green, Marigold and Coral when three things sit side by side, such as a claim's states or chart series. Add Cerulean fourth and Raspberry fifth.
+When three things sit side by side, such as a claim's states or chart series, use Jade Emerald, Amber Gold and Sky Cyan. Add Electric Indigo fourth and Crimson Rose fifth. Status badges pair a soft 12%-opacity tint background with a 1px semantic border and high-contrast label text, always showing both a color and a word.
 
 ## Surfaces
 
-- **Light mode**: page background `#F0F4F5`, white panels and cards
-- **Dark mode**: page background `#04232E`, black panels and cards
+- **Light mode**:
+  - Page canvas: Cool Alabaster `#F8FAFC`
+  - Elevated panels, tables and cards: Pure White `#FFFFFF` with a `1px solid #E2E8F0` hairline border and subtle ambient shadow (`0 1px 3px rgba(15, 23, 42, 0.04)`)
+  - Subtle inset / code / diff wells: `#F1F5F9`
+- **Dark mode**:
+  - Page canvas: Deep Obsidian `#090D16`
+  - Elevated panels, tables and cards: Midnight Graphite `#111827` with a `1px solid #1E293B` hairline border and top inner highlight (`inset 0 1px 0 rgba(255, 255, 255, 0.04)`)
+  - Subtle inset / code / diff wells: `#0D131F`
 
-Panels are rounded with no outline. Sea Green and Marigold are too bright for small text, so darken them for headings and body text on light backgrounds and lighten them on dark ones.
+Panels use a crisp `10px` border radius (`6px` for buttons, inputs and status pills). Keep interactive focus rings unmistakable (`2px solid #6366F1` with `2px` offset).
+
+## Layout & Micro-Interactions
+
+- **Density & alignment**: Generous breathing room (`24px` panel padding, `16px` grid gaps) paired with compact, scannable data tables. Always right-align currency amounts and numeric columns using tabular numerals (`Geist Mono`).
+- **Motion**: Fast, purposeful transitions (`150ms cubic-bezier(0.16, 1, 0.3, 1)`) for hover states, drawers and status updates. Layout must never shift or jump when live data refreshes.
 
 ## Avoid
 
-- Borders on one edge of a panel, and thin lines across the top of the page
-- Heavy use of gradient fills
+- Thick colored side-stripe borders on cards or neon glow shadows
+- Heavy multi-stop background gradients that compete with data legibility
+- Pure `#000000` backgrounds in dark mode or unstyled default browser inputs
+- Emojis anywhere in the interface
 
 ## Tone
 

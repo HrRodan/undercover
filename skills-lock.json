@@ -127,6 +127,12 @@
       "skillPath": "config/skills/managed-deep-agents/SKILL.md",
       "computedHash": "4e03ec82e79fe392a1ea9a278fd2484dce1f6bcc9589f0abdb1c0bd35b45f053"
     },
+    "playwright-cli": {
+      "source": "microsoft/playwright-cli",
+      "sourceType": "github",
+      "skillPath": "skills/playwright-cli/SKILL.md",
+      "computedHash": "ffbd59a973d4e2c19c6ecc31254a14497069c362f1d1820b6a6cfbe62de34a73"
+    },
     "swarm": {
       "source": "langchain-ai/langchain-skills",
       "sourceType": "github",
