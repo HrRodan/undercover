@@ -1,10 +1,13 @@
 # Status
 
-A hello-world skeleton with every check in place:
+## Built so far
 
-- `backend/`: one route, `GET /api/health`
-- `agent/`: the entry point `run(claim_id, thread_id)`, with one tool that calls the health route
-- `dashboard/`: one page that shows whether the backend is up
-- `e2e/`: one test of that page
-
-Nothing of UnderCover is built yet. Update this file as you build.
+- **Phase 1 — SQLAlchemy Database Models & Seed Data Layer**:
+  - `backend/models.py`: SQLAlchemy 2.x ORM models (`CompanyRecord`, `PlanRecord`, `AddOnRecord`, `PolicyRecord`, `CustomerRecord`, `HandlerRecord`, `ClaimRecord`, `ClaimStepRecord`, `PolicyWordingRecord`, `InstructionsRecord`).
+  - `backend/db.py`: SQLAlchemy engine, `get_session` dependency, and idempotent seed loader for `company.json`, `plans.json`, `policies.json`, `customers.json`, `handlers.json`, `claims.json` (initialized in `waiting` state), `policy_wording.md`, and read-only agent instructions.
+  - `backend/schemas.py`: Typed Pydantic request and response models.
+  - `backend/tests/test_db.py`: Unit tests verifying seed counts, initial claim states, idempotency, and protection of held-out/manual/security files.
+- `backend/main.py`: `GET /api/health`
+- `agent/`: entry point `run(claim_id, thread_id)`
+- `dashboard/`: status page
+- `e2e/`: Playwright smoke test
