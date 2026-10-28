@@ -116,11 +116,11 @@ Implements the UnderCover Agent in `agent/main.py` using LangChain's `create_age
 
 ### Success Criteria
 
-- [ ] `agent.main.run(claim_id, thread_id, llm=...)` fetches instructions from `GET /api/instructions`, invokes `create_agent`, runs the tool loop against the backend API, and returns the final message text.
-- [ ] Unit tests in `agent/tests/test_agent.py` verify each tool (`get_claim`, `get_policy`, `get_customer`, `get_policy_wording`, `decide_claim`, `pay_claim`) and verify that steps are recorded on the claim in order.
-- [ ] Unit tests verify that when the agent approves a claim over $1,000 and calls `pay_claim`, the tool gracefully handles the backend's 409 block and leaves the claim in `waiting_for_sign_off`.
-- [ ] `POST /api/claims/CLM-1001/run` transitions the claim through `in_progress`, runs the agent, and returns the updated claim detail.
-- [ ] Command `npm run check:python` passes all `ruff`, `pyright`, and `pytest` checks with `>= 80%` coverage and zero live LLM calls in tests.
+- [x] `agent.main.run(claim_id, thread_id, llm=...)` fetches instructions from `GET /api/instructions`, invokes `create_agent`, runs the tool loop against the backend API, and returns the final message text.
+- [x] Unit tests in `agent/tests/test_agent.py` verify each tool (`get_claim`, `get_policy`, `get_customer`, `get_policy_wording`, `decide_claim`, `pay_claim`) and verify that steps are recorded on the claim in order.
+- [x] Unit tests verify that when the agent approves a claim over $1,000 and calls `pay_claim`, the tool gracefully handles the backend's 409 block and leaves the claim in `waiting_for_sign_off`.
+- [x] `POST /api/claims/CLM-1001/run` transitions the claim through `in_progress`, runs the agent, and returns the updated claim detail.
+- [x] Command `npm run check:python` passes all `ruff`, `pyright`, and `pytest` checks with `>= 80%` coverage and zero live LLM calls in tests.
 
 ---
 

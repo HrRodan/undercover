@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from backend import main as backend_main
 from backend.main import app
 
 
@@ -192,3 +193,42 @@ def test_decline_and_invalid_payment_or_sign_off(api_client: TestClient) -> None
         "/api/claims/CLM-1004/sign-off", json={"handler_id": "HND-01"}
     )
     assert sign_res.status_code == 409
+
+
+def test_run_claim_agent_endpoint(
+    api_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify POST /api/claims/{claim_id}/run resets steps and runs the agent."""
+    api_client.post(
+        "/api/claims/CLM-1001/steps",
+        json={"message": "Old stale step"},
+    )
+
+    def stub_invoke(claim_id: str) -> None:
+        api_client.post(
+            f"/api/claims/{claim_id}/steps",
+            json={"message": f"Reading claim {claim_id}"},
+        )
+        api_client.post(
+            f"/api/claims/{claim_id}/decision",
+            json={
+                "decision": "approve",
+                "payout": 420.0,
+                "policy_section": "Section 3: Trip Delay",
+                "reason": "Covered delay.",
+            },
+        )
+        api_client.post(
+            f"/api/claims/{claim_id}/pay",
+            json={"amount": 420.0},
+        )
+
+    monkeypatch.setattr(backend_main, "invoke_claim_agent", stub_invoke)
+    res = api_client.post("/api/claims/CLM-1001/run")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "decided"
+    assert data["payment_status"] == "paid"
+    assert data["amount_paid"] == 420.0
+    assert len(data["steps"]) == 1
+    assert data["steps"][0]["message"] == "Reading claim CLM-1001"

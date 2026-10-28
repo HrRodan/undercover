@@ -20,7 +20,9 @@
     - `POST /api/claims/{claim_id}/decision` (`decide_claim`)
     - `POST /api/claims/{claim_id}/pay` (`pay_claim`) — blocks payouts over $1,000 until handler sign-off
     - `POST /api/claims/{claim_id}/sign-off` (`sign_off_claim`)
-  - `backend/tests/test_api.py`: API tests covering all endpoints, 404s, step recording, decisions, payments, and the $1,000 sign-off guardrail.
-- `agent/`: entry point `run(claim_id, thread_id)`
+- **Phase 3 — The UnderCover Agent & Backend Run Trigger**:
+  - `agent/main.py`: LangChain `create_agent` entry point `run(claim_id, thread_id, llm=None)` on OpenRouter (`openai/gpt-6-luna` with `reasoning_effort="low"` by default, or `MODEL_NAME`), fetching its system prompt from `GET /api/instructions` and logging step-by-step progress via tools (`check_backend`, `get_claim`, `get_policy`, `get_customer`, `get_policy_wording`, `decide_claim`, `pay_claim`).
+  - `backend/main.py`: `POST /api/claims/{claim_id}/run` (`run_claim_agent`).
+  - `agent/tests/test_agent.py`: Unit tests with `StubModel` covering under-limit approvals, over-$1,000 sign-off holds, and step logging.
 - `dashboard/`: status page
 - `e2e/`: Playwright smoke test

@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import Depends, FastAPI
 from sqlalchemy.orm import Session
 
+from agent import main as agent_main
 from backend import db
 from backend.schemas import (
     ClaimDetail,
@@ -101,3 +102,17 @@ def sign_off_claim(
 ) -> ClaimDetail:
     """Record a handler's sign-off on an approved claim over $1,000 and pay it."""
     return db.sign_off_claim_payout(session, claim_id, payload.handler_id)
+
+
+def invoke_claim_agent(claim_id: str) -> None:
+    """Invoke the UnderCover Agent for the given claim ID."""
+    agent_main.run(claim_id, f"thread-{claim_id}")
+
+
+@app.post("/api/claims/{claim_id}/run", operation_id="run_claim_agent")
+def run_claim_agent(claim_id: str, session: DbSession) -> ClaimDetail:
+    """Reset steps, mark a claim in progress, and run the UnderCover Agent."""
+    db.prepare_claim_for_run(session, claim_id)
+    invoke_claim_agent(claim_id)
+    session.expire_all()
+    return db.get_claim_detail(session, claim_id)
