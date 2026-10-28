@@ -2,6 +2,7 @@
 
 import json
 import os
+import threading
 from collections.abc import Generator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -98,6 +99,7 @@ DEFAULT_INSTRUCTIONS = "\n".join(
 )
 
 _ENGINES: dict[str, Engine] = {}
+_INIT_LOCK = threading.Lock()
 
 
 def get_db_path() -> Path:
@@ -256,16 +258,19 @@ def _seed_claims(session: Session) -> None:
 def init_db(engine: Engine | None = None) -> None:
     """Create database tables and seed initial operational data if empty."""
     target_engine = engine or get_engine()
-    Base.metadata.create_all(target_engine)
-    with Session(target_engine) as session:
-        existing = session.scalar(select(CompanyRecord).where(CompanyRecord.id == 1))
-        if existing is not None:
-            return
-        _seed_company_and_docs(session)
-        _seed_plans_and_add_ons(session)
-        _seed_policies_customers_handlers(session)
-        _seed_claims(session)
-        session.commit()
+    with _INIT_LOCK:
+        Base.metadata.create_all(target_engine)
+        with Session(target_engine) as session:
+            existing = session.scalar(
+                select(CompanyRecord).where(CompanyRecord.id == 1)
+            )
+            if existing is not None:
+                return
+            _seed_company_and_docs(session)
+            _seed_plans_and_add_ons(session)
+            _seed_policies_customers_handlers(session)
+            _seed_claims(session)
+            session.commit()
 
 
 def get_session() -> Generator[Session, None, None]:

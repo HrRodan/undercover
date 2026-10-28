@@ -199,12 +199,12 @@ Testing the integrated frontend and backend in Playwright proves that the SQLAlc
 
 ### Success Criteria
 
-- [ ] Playwright E2E tests (`npm run e2e`) verify:
+- [x] Playwright E2E tests (`npm run e2e`) verify:
   - The dashboard loads the 25-claim queue with statuses (`Waiting`, `In progress`, `Waiting for sign-off`, `Decided`) and USD amounts.
   - Selecting a claim (`CLM-1001`) shows the customer story, claimed items, supporting documents, policy details, and customer history.
   - Recording steps and a decision (`<= $1,000`) updates the claim step-by-step and marks it `Decided` with the explanation and policy section visible.
   - Recording an approved decision over `$1,000` (`CLM-1003`, `$3,750.00`) blocks payment (`POST /api/claims/CLM-1003/pay` returns `409`), shows `Waiting for sign-off` in the UI, and allows a handler to sign off in the UI to release the payment and mark the claim `Decided`.
   - Opening the "Agent Instructions" view displays the agent's instructions read-only.
-- [ ] Interactive verification with `playwright-cli` confirms visual hierarchy, light/dark surface contrast, tabular numerals, and zero console or page errors on the live app (`http://localhost:5173`).
-- [ ] `docs/STATUS.md` accurately documents the built pilot.
-- [ ] Command `npm run check` (`npm run check:python && npm run check:ts && npm run e2e`) passes completely.
+- [x] Interactive verification with `playwright-cli` confirms visual hierarchy, light/dark surface contrast, tabular numerals, and zero console or page errors on the live app (`http://localhost:5173`).
+- [x] `docs/STATUS.md` accurately documents the built pilot.
+- [x] Command `npm run check` (`npm run check:python && npm run check:ts && npm run e2e`) passes completely.
