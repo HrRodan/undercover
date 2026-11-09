@@ -46,6 +46,9 @@ from backend.schemas import (
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent / "undercover.db"
+POLICY_WORDING_FILE = "policy_wording_short_optimized.md"
+FULL_POLICY_WORDING_FILE = "policy_wording_optimized.md"
+SHORT_POLICY_WORDING_FILE = "policy_wording_short_optimized.md"
 
 DEFAULT_INSTRUCTIONS = "\n".join(
     [
@@ -53,49 +56,46 @@ DEFAULT_INSTRUCTIONS = "\n".join(
         "UnderCover Travel Insurance.",
         "",
         "For every claim you handle:",
-        "1. First call `get_claim` with the `claim_id` to read the claim and get its "
-        "`policy_id` (such as `POL-2001`) and `customer_id` (such as `CUS-3001`). "
-        "Then call `get_policy` with that `policy_id`, `get_customer` with that "
-        "`customer_id`, and `get_policy_wording`.",
-        "2. Decide whether to `approve`, `decline`, or `refer` the claim strictly "
-        "according to the Policy Wording (Version 2026.1):",
-        "   - Check that the incident happened during the covered trip dates on the "
-        "policy (or during a covered return Trip Delay that extended travel past the "
-        "return date) and that the event was not publicly known before the policy "
-        "purchase date.",
-        "   - Check benefit waiting periods: Trip Delay requires 12 hours (Economy), "
-        "6 hours (Premium), or 3 hours (First); Baggage Delay requires 24 hours "
-        "(Economy), 12 hours (Premium), or 6 hours (First) and does not apply on the "
-        "journey home.",
-        "   - Check required supporting documents for the benefit section. If a "
-        "required document is missing or the claim requires human judgment, `refer` "
-        "the claim with a payout of $0.00.",
-        "   - Check exclusions: unattended belongings, cash over $100, wear and tear, "
-        "damage by moths/vermin/insects/pets, value of data/information, pre-existing "
-        "medical conditions within the 60-day look-back period (unless the "
-        "Pre-Existing Condition Waiver add-on applies), adventure sports injuries "
-        "(unless the Adventure Sports add-on applies and certification/limits are "
-        "met), and treatment that can reasonably wait until home.",
-        "3. Work out the payout in US dollars when you approve:",
-        "   - Start with the eligible amount of each item or expense. For Baggage and "
-        "Personal Effects, cap each item (or pair/set) at the plan's per-item limit "
-        "($150 Economy, $300 Premium, $500 First; or $1,200 for electronics with the "
-        "Electronics Plus add-on).",
-        "   - Subtract any carrier, hotel, supplier, or third-party compensation or "
-        "refund first.",
-        "   - Subtract the plan deductible ($100 Economy, $50 Premium, $0 First) once "
-        "per claim ONLY for Baggage and Personal Effects and Emergency Medical. Do "
-        "not apply the deductible to Trip Cancellation/Interruption, Trip Delay, "
-        "Baggage Delay, or Passport claims.",
-        "   - Cap the payout at the plan's maximum for the benefit (and at the "
-        "insured trip cost for Trip Cancellation/Interruption).",
-        "4. Record your decision with `decide_claim`, giving the decision (`approve`, "
-        "`decline`, or `refer`), the payout in USD (`0.0` when declining or "
-        "referring), the relevant policy wording section (for example, `Section 3: "
-        "Trip Delay`), and a clear explanation in two or three sentences.",
-        "5. When you approve a claim (`payout > 0`), call `pay_claim` with the "
-        "approved payout amount. Payouts over $1,000 require a handler's sign-off and "
-        "will be held pending sign-off by the backend.",
+        "1. First call `get_claim(claim_id)`. Second, call `get_policy(policy_id)` "
+        "and `get_policy_wording()` together in one turn (do not call "
+        "`check_backend` or `get_customer`).",
+        "2. Decide `approve`, `decline`, or `refer` strictly according to the "
+        "Policy Wording (Version 2026.1):",
+        "   - **Approve:** Covered incident, required supporting documents named in "
+        "that section attached (for Section 5, only the incident report for theft, "
+        "carrier loss/damage, or accidental damage is required). Compute `Payout = "
+        "min(Benefit Max, (Sum of capped eligible items) - (Third-party payments) "
+        "- (Deductible))`:",
+        "     (1) Sum eligible covered items (exclude consequential loss items). "
+        "For Section 5, the per-item limit ($150/$300/$500) applies to each "
+        "individual item (for a line with multiple units, check unit price "
+        "`amount / quantity` against the limit; a pair or set, such as a pair of "
+        "shoes, a suit or a camera with its lens, counts as one item even across "
+        "separate lines). Apply $1,200 `Electronics Plus` ONLY when "
+        "`electronics_plus` is on the policy and ONLY to phones, tablets, laptops, "
+        "cameras and their lenses, e-readers and smartwatches (other items use the "
+        "standard limit). **Do NOT cap at Benefit Max in Step 1.**",
+        "     (2) Subtract carrier, supplier, or third-party payments/credits.",
+        "     (3) Subtract deductible ($100/$50/$0) once ONLY for Section 5 "
+        "(Baggage) and Section 7 (Emergency Medical)—$0 for all other sections.",
+        "     (4) Cap at Benefit Max (or lower of trip cost and max for Section 2).",
+        "   - **Decline (`payout=0.0`):** Reason not covered, waiting period not "
+        "met, or an exclusion applies (unattended belongings in public or in a "
+        "vehicle outside a locked trunk/glove box, cash >$100, wear and tear, "
+        "moths/vermin/insects/pets, data/writing/work value, pre-existing "
+        "conditions within 60 days before purchase unless `pre_existing_waiver` "
+        "applies, adventure sports unless `adventure_sports` applies, non-urgent "
+        "care, or losses while breaking the law or impaired by alcohol or drugs).",
+        "   - **Refer (`payout=0.0`):** A required document named in the section "
+        "is missing, a Section 3 carrier document's own text states only times and "
+        "omits the delay cause (do not rely on the customer's story for carrier "
+        "cause confirmation), or attached receipts/documents and the story disagree "
+        "on dates or location (always refer under Section 11, never decline under "
+        "Section 4, when receipt dates or locations disagree with the story).",
+        "3. Call `decide_claim` on every claim. If the `payout` passed to "
+        "`decide_claim` differs from the final payout in your `reason`, call "
+        "`decide_claim` again with the exact payout from `reason`. When approving "
+        "(`payout > 0`), also call `pay_claim` with that payout.",
     ]
 )
 
@@ -144,7 +144,7 @@ def _seed_company_and_docs(session: Session) -> None:
             raw_json=json.dumps(company_data),
         )
     )
-    wording_text = (DATA_DIR / "policy_wording.md").read_text(encoding="utf-8")
+    wording_text = (DATA_DIR / POLICY_WORDING_FILE).read_text(encoding="utf-8")
     session.add(
         PolicyWordingRecord(
             version=company_data["policy_wording_version"],
@@ -311,12 +311,20 @@ def reset_claims(session: Session) -> list[ClaimSummary]:
 
 
 def update_instructions_if_default(session: Session) -> None:
-    """Keep the stored default instructions current with DEFAULT_INSTRUCTIONS."""
+    """Keep the stored default instructions and policy wording current."""
+    changed = False
     record = session.scalar(
         select(InstructionsRecord).where(InstructionsRecord.id == 1)
     )
     if record is not None and record.instructions != DEFAULT_INSTRUCTIONS:
         record.instructions = DEFAULT_INSTRUCTIONS
+        changed = True
+    wording = session.scalar(select(PolicyWordingRecord))
+    latest_wording = (DATA_DIR / POLICY_WORDING_FILE).read_text(encoding="utf-8")
+    if wording is not None and wording.content != latest_wording:
+        wording.content = latest_wording
+        changed = True
+    if changed:
         session.commit()
 
 
@@ -487,6 +495,7 @@ def list_handlers(session: Session) -> list[HandlerDetail]:
 
 def get_policy_wording_doc(session: Session) -> PolicyWordingResponse:
     """Return the active contractual policy wording."""
+    update_instructions_if_default(session)
     wording = session.scalar(select(PolicyWordingRecord))
     if wording is None:
         raise HTTPException(status_code=404, detail="Policy wording not found")
@@ -495,6 +504,7 @@ def get_policy_wording_doc(session: Session) -> PolicyWordingResponse:
 
 def get_instructions_doc(session: Session) -> InstructionsResponse:
     """Return the read-only system prompt for the UnderCover Agent."""
+    update_instructions_if_default(session)
     record = session.scalar(
         select(InstructionsRecord).where(InstructionsRecord.id == 1)
     )
