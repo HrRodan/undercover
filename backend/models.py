@@ -126,6 +126,8 @@ class ClaimRecord(Base):
     payment_status: Mapped[str] = mapped_column(String(64), default="unpaid")
     amount_paid: Mapped[float] = mapped_column(Float, default=0.0)
     signed_off_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    sections_read_json: Mapped[str] = mapped_column(Text, default="[]")
 
 
 class ClaimStepRecord(Base):
@@ -149,6 +151,15 @@ class PolicyWordingRecord(Base):
     content: Mapped[str] = mapped_column(Text)
 
 
+class ClaimsManualRecord(Base):
+    """Internal claims handling manual text."""
+
+    __tablename__ = "claims_manual"
+
+    version: Mapped[str] = mapped_column(String(32), primary_key=True)
+    content: Mapped[str] = mapped_column(Text)
+
+
 class InstructionsRecord(Base):
     """Read-only system instructions for the UnderCover Agent."""
 
@@ -156,3 +167,30 @@ class InstructionsRecord(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     instructions: Mapped[str] = mapped_column(Text)
+    queue_instructions: Mapped[str] = mapped_column(Text, default="")
+    claim_instructions: Mapped[str] = mapped_column(Text, default="")
+
+
+class TodoItemRecord(Base):
+    """Single item in the queue agent's to-do list for the active run."""
+
+    __tablename__ = "todos"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    item_order: Mapped[int] = mapped_column(Integer, index=True)
+    claim_id: Mapped[str] = mapped_column(String(64), index=True)
+    description: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(32), default="to_do")
+    result_summary: Mapped[str] = mapped_column(Text, default="")
+
+
+class QueueRunRecord(Base):
+    """State and handover summary of the current or most recent queue run."""
+
+    __tablename__ = "queue_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    status: Mapped[str] = mapped_column(String(32), default="idle")
+    cap: Mapped[int] = mapped_column(Integer, default=25)
+    summary: Mapped[str] = mapped_column(Text, default="")
+    target_claims_json: Mapped[str] = mapped_column(Text, default="[]")

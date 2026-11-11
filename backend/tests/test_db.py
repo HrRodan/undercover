@@ -6,9 +6,11 @@ import pytest
 from sqlalchemy import func, select
 
 from backend import db, schemas
+from backend.config import get_backend_config
 from backend.models import (
     AddOnRecord,
     ClaimRecord,
+    ClaimsManualRecord,
     ClaimStepRecord,
     CompanyRecord,
     CustomerRecord,
@@ -27,6 +29,10 @@ def test_seed_counts_and_initial_state(
     db_file = tmp_path / "test_undercover.db"
     monkeypatch.setenv("UNDERCOVER_DB_PATH", str(db_file))
 
+    cfg = get_backend_config()
+    assert cfg.policy_wording_file == "policy_wording_short_optimized.md"
+    assert cfg.claims_manual_file == "claims_manual.md"
+
     session_gen = db.get_session()
     session = next(session_gen)
     try:
@@ -43,6 +49,8 @@ def test_seed_counts_and_initial_state(
             assert claim.decision is None
             assert claim.payout is None
             assert claim.signed_off_by is None
+            assert claim.attempts == 0
+            assert claim.sections_read_json == "[]"
 
         step_count = session.scalar(select(func.count()).select_from(ClaimStepRecord))
         assert step_count == 0
@@ -73,13 +81,23 @@ def test_seed_counts_and_initial_state(
             select(PolicyWordingRecord).where(PolicyWordingRecord.version == "2026.1")
         )
         assert wording is not None
-        assert "# UnderCover Travel Insurance: Policy Wording" in wording.content
+        assert (
+            "# UnderCover Travel Insurance: Policy Wording, short version"
+            in wording.content
+        )
+
+        manual = session.scalar(
+            select(ClaimsManualRecord).where(ClaimsManualRecord.version == "2026.2")
+        )
+        assert manual is not None
+        assert "# UnderCover Claims Handling Manual" in manual.content
 
         instructions = session.scalar(
             select(InstructionsRecord).where(InstructionsRecord.id == 1)
         )
         assert instructions is not None
-        assert "UnderCover Agent" in instructions.instructions
+        assert "UnderCover Queue Agent" in instructions.queue_instructions
+        assert "UnderCover Claim Subagent" in instructions.claim_instructions
     finally:
         session_gen.close()
 
@@ -105,7 +123,7 @@ def test_init_db_is_idempotent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
 def test_restricted_files_are_never_read(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Verify seeding never reads data/evals/, claims_manual.md, or data/security/."""
+    """Verify seeding reads configured wording and manual but never evals/security."""
     db_file = tmp_path / "restricted_check.db"
     monkeypatch.setenv("UNDERCOVER_DB_PATH", str(db_file))
 
@@ -125,7 +143,8 @@ def test_restricted_files_are_never_read(
     accessed_parts = {part for p in accessed_paths for part in p.parts}
     assert "evals" not in accessed_parts
     assert "security" not in accessed_parts
-    assert "claims_manual.md" not in accessed_names
+    assert "policy_wording_short_optimized.md" in accessed_names
+    assert "claims_manual.md" in accessed_names
 
     db_source = Path(db.__file__).read_text(encoding="utf-8")
     models_source = Path(db.__file__).with_name("models.py").read_text(encoding="utf-8")

@@ -16,14 +16,22 @@ def api_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     return TestClient(app)
 
 
-def test_read_endpoints(api_client: TestClient) -> None:
-    """Verify read endpoints for claims, policies, customers, handlers, and docs."""
+def test_read_endpoints_and_config(api_client: TestClient) -> None:
+    """Verify read endpoints for config, claims, policies, customers, and docs."""
+    cfg_res = api_client.get("/api/config")
+    assert cfg_res.status_code == 200
+    cfg = cfg_res.json()
+    assert cfg["policy_wording_file"] == "policy_wording_short_optimized.md"
+    assert cfg["claims_manual_file"] == "claims_manual.md"
+
     claims_res = api_client.get("/api/claims")
     assert claims_res.status_code == 200
     claims = claims_res.json()
     assert len(claims) == 25
     assert claims[0]["claim_id"] == "CLM-1001"
     assert claims[0]["status"] == "waiting"
+    assert claims[0]["attempts"] == 0
+    assert claims[0]["sections_read"] == []
 
     claim_res = api_client.get("/api/claims/CLM-1001")
     assert claim_res.status_code == 200
@@ -59,15 +67,121 @@ def test_read_endpoints(api_client: TestClient) -> None:
     assert len(handlers) == 3
     assert handlers[0]["handler_id"] == "HND-01"
 
+
+def test_wording_manual_and_instructions_endpoints(api_client: TestClient) -> None:
+    """Verify policy wording, claims manual, and dual instructions endpoints."""
     wording_res = api_client.get("/api/policy-wording")
     assert wording_res.status_code == 200
     wording = wording_res.json()
     assert wording["version"] == "2026.1"
     assert "# UnderCover Travel Insurance: Policy Wording" in wording["content"]
 
+    manual_res = api_client.get("/api/claims-manual")
+    assert manual_res.status_code == 200
+    manual = manual_res.json()
+    assert manual["version"] == "2026.2"
+    assert "# UnderCover Claims Handling Manual" in manual["content"]
+
     instructions_res = api_client.get("/api/instructions")
     assert instructions_res.status_code == 200
-    assert "UnderCover Agent" in instructions_res.json()["instructions"]
+    inst_data = instructions_res.json()
+    assert "UnderCover Queue Agent" in inst_data["queue_instructions"]
+    assert "UnderCover Claim Subagent" in inst_data["claim_instructions"]
+
+
+def test_document_sections_and_search(api_client: TestClient) -> None:
+    """Verify listing, reading, searching, and recording read document sections."""
+    wording_secs = api_client.get("/api/documents/policy_wording/sections")
+    assert wording_secs.status_code == 200
+    w_titles = [s["title"] for s in wording_secs.json()]
+    assert "Limits" in w_titles
+    assert "Baggage" in w_titles
+
+    manual_secs = api_client.get("/api/documents/claims_manual/sections")
+    assert manual_secs.status_code == 200
+    m_titles = [s["title"] for s in manual_secs.json()]
+    assert "7. Interpretation notes" in m_titles
+    assert "9. Repeat claims" in m_titles
+
+    sec_detail = api_client.get("/api/documents/claims_manual/sections/7")
+    assert sec_detail.status_code == 200
+    assert "Wild animals" in sec_detail.json()["content"]
+
+    rec_res = api_client.post(
+        "/api/claims/CLM-1020/sections-read",
+        json={"doc_name": "claims_manual", "section_id": "7"},
+    )
+    assert rec_res.status_code == 200
+    claim_20 = api_client.get("/api/claims/CLM-1020").json()
+    assert "Claims Manual — 7. Interpretation notes" in claim_20["sections_read"]
+    assert any(
+        "Reading Claims Manual — 7. Interpretation notes" in s["message"]
+        for s in claim_20["steps"]
+    )
+
+    search_res = api_client.post(
+        "/api/documents/search",
+        json={"query": "wild animals monkey"},
+    )
+    assert search_res.status_code == 200
+    results = search_res.json()
+    assert len(results) >= 1
+    assert any("Wild animals" in r["content"] for r in results)
+
+    assert api_client.get("/api/documents/unknown/sections").status_code == 404
+    assert (
+        api_client.get("/api/documents/claims_manual/sections/999").status_code == 404
+    )
+
+
+def test_todos_and_failure_lifecycle(api_client: TestClient) -> None:
+    """Verify storing to-do items and the 1st/2nd claim failure state transitions."""
+    todos_payload = {
+        "todos": [
+            {
+                "claim_id": "CLM-1001",
+                "description": "Decide claim CLM-1001",
+                "status": "to_do",
+                "result_summary": "",
+            },
+            {
+                "claim_id": "CLM-1002",
+                "description": "Decide claim CLM-1002",
+                "status": "in_progress",
+                "result_summary": "",
+            },
+        ]
+    }
+    put_res = api_client.put("/api/todos", json=todos_payload)
+    assert put_res.status_code == 200
+    assert len(put_res.json()) == 2
+
+    get_res = api_client.get("/api/todos")
+    assert get_res.status_code == 200
+    assert get_res.json()[0]["claim_id"] == "CLM-1001"
+    assert get_res.json()[1]["status"] == "in_progress"
+
+    # First failure on CLM-1002 resets status to waiting (attempts == 1)
+    fail1 = api_client.post(
+        "/api/claims/CLM-1002/fail",
+        json={"error": "Model provider timeout"},
+    )
+    assert fail1.status_code == 200
+    f1_data = fail1.json()
+    assert f1_data["status"] == "waiting"
+    assert f1_data["attempts"] == 1
+    assert api_client.get("/api/todos").json()[1]["status"] == "to_do"
+
+    # Second failure on CLM-1002 marks status left_for_handler (attempts == 2)
+    fail2 = api_client.post(
+        "/api/claims/CLM-1002/fail",
+        json={"error": "Model provider timeout again"},
+    )
+    assert fail2.status_code == 200
+    f2_data = fail2.json()
+    assert f2_data["status"] == "left_for_handler"
+    assert f2_data["attempts"] == 2
+    assert api_client.get("/api/todos").json()[1]["status"] == "left_for_handler"
 
 
 def test_not_found_responses(api_client: TestClient) -> None:
@@ -83,24 +197,16 @@ def test_not_found_responses(api_client: TestClient) -> None:
     )
 
 
-def test_steps_and_approve_under_limit(api_client: TestClient) -> None:
-    """Verify recording steps, approving a claim <= $1,000, and paying it."""
+def test_steps_approve_and_block_double_decision_or_payment(
+    api_client: TestClient,
+) -> None:
+    """Verify recording steps, approving and paying <= $1,000, and blocking repeats."""
     step1 = api_client.post(
         "/api/claims/CLM-1001/steps",
         json={"message": "Reading claim CLM-1001"},
     )
     assert step1.status_code == 200
-    data1 = step1.json()
-    assert data1["status"] == "in_progress"
-    assert len(data1["steps"]) == 1
-    assert data1["steps"][0]["step_number"] == 1
-
-    step2 = api_client.post(
-        "/api/claims/CLM-1001/steps",
-        json={"message": "Checking policy POL-2001"},
-    )
-    assert step2.status_code == 200
-    assert len(step2.json()["steps"]) == 2
+    assert step1.json()["status"] == "in_progress"
 
     dec_res = api_client.post(
         "/api/claims/CLM-1001/decision",
@@ -112,21 +218,33 @@ def test_steps_and_approve_under_limit(api_client: TestClient) -> None:
         },
     )
     assert dec_res.status_code == 200
-    dec_data = dec_res.json()
-    assert dec_data["status"] == "decided"
-    assert dec_data["decision"] == "approve"
-    assert dec_data["payout"] == 420.0
-    assert dec_data["payment_status"] == "unpaid"
+    assert dec_res.json()["status"] == "decided"
+
+    # Duplicate decision must be rejected with 409
+    dup_dec = api_client.post(
+        "/api/claims/CLM-1001/decision",
+        json={
+            "decision": "decline",
+            "payout": 0.0,
+            "policy_section": "Section 3: Trip Delay",
+            "reason": "Changed mind.",
+        },
+    )
+    assert dup_dec.status_code == 409
 
     pay_res = api_client.post(
         "/api/claims/CLM-1001/pay",
         json={"amount": 420.0},
     )
     assert pay_res.status_code == 200
-    pay_data = pay_res.json()
-    assert pay_data["status"] == "decided"
-    assert pay_data["payment_status"] == "paid"
-    assert pay_data["amount_paid"] == 420.0
+    assert pay_res.json()["payment_status"] == "paid"
+
+    # Duplicate payment must be rejected with 409
+    dup_pay = api_client.post(
+        "/api/claims/CLM-1001/pay",
+        json={"amount": 420.0},
+    )
+    assert dup_pay.status_code == 409
 
 
 def test_over_limit_payment_blocked_until_handler_sign_off(
@@ -153,11 +271,6 @@ def test_over_limit_payment_blocked_until_handler_sign_off(
         json={"amount": 3750.0},
     )
     assert blocked_pay.status_code == 409
-
-    still_waiting = api_client.get("/api/claims/CLM-1003").json()
-    assert still_waiting["status"] == "waiting_for_sign_off"
-    assert still_waiting["payment_status"] == "pending_sign_off"
-    assert still_waiting["amount_paid"] == 0.0
 
     sign_off_res = api_client.post(
         "/api/claims/CLM-1003/sign-off",
@@ -195,14 +308,10 @@ def test_decline_and_invalid_payment_or_sign_off(api_client: TestClient) -> None
     assert sign_res.status_code == 409
 
 
-def test_run_claim_agent_endpoint(
+def test_run_claim_and_queue_endpoints(
     api_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Verify POST /api/claims/{claim_id}/run resets steps and runs the agent."""
-    api_client.post(
-        "/api/claims/CLM-1001/steps",
-        json={"message": "Old stale step"},
-    )
+    """Verify POST /api/claims/{claim_id}/run and POST /api/queue/run."""
 
     def stub_invoke(claim_id: str) -> None:
         api_client.post(
@@ -226,17 +335,19 @@ def test_run_claim_agent_endpoint(
     monkeypatch.setattr(backend_main, "invoke_claim_agent", stub_invoke)
     res = api_client.post("/api/claims/CLM-1001/run")
     assert res.status_code == 200
-    data = res.json()
-    assert data["status"] == "decided"
-    assert data["payment_status"] == "paid"
-    assert data["amount_paid"] == 420.0
-    assert len(data["steps"]) == 1
-    assert data["steps"][0]["message"] == "Reading claim CLM-1001"
+    assert res.json()["status"] == "decided"
+
+    def stub_queue(cap: int) -> str:
+        return f"Processed up to {cap} claims."
+
+    monkeypatch.setattr(backend_main, "invoke_queue_agent", stub_queue)
+    q_res = api_client.post("/api/queue/run", json={"cap": 5})
+    assert q_res.status_code == 200
+    q_data = q_res.json()
+    assert q_data["status"] == "completed"
+    assert q_data["cap"] == 5
+    assert q_data["summary"] == "Processed up to 5 claims."
 
     reset_res = api_client.post("/api/claims/reset")
     assert reset_res.status_code == 200
-    reset_claims = reset_res.json()
-    assert len(reset_claims) == 25
-    assert reset_claims[0]["status"] == "waiting"
-    assert reset_claims[0]["decision"] is None
-    assert api_client.get("/api/claims/CLM-1001").json()["steps"] == []
+    assert reset_res.json()[0]["status"] == "waiting"

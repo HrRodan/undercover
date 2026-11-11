@@ -2,25 +2,31 @@ import { useCallback, useEffect, useState } from "react";
 import {
   fetchClaimDetail,
   fetchClaims,
+  fetchClaimsManual,
   fetchCustomerDetail,
   fetchHandlers,
   fetchInstructions,
   fetchPolicyDetail,
   fetchPolicyWording,
+  fetchQueueRun,
   resetAllClaims,
   signOffClaim,
   triggerClaimAgent,
+  triggerQueueRun,
 } from "./api";
 import { ClaimDetail } from "./components/ClaimDetail";
 import { ClaimsQueue } from "./components/ClaimsQueue";
 import { InstructionsView } from "./components/InstructionsView";
 import type {
   ClaimDetail as ClaimDetailModel,
+  ClaimsManualResponse,
   ClaimSummary,
   CustomerDetail,
   HandlerDetail,
+  InstructionsResponse,
   PolicyDetail,
   PolicyWordingResponse,
+  TodoItem,
 } from "./types";
 
 type ActiveTab = "workspace" | "instructions";
@@ -73,93 +79,111 @@ function Topbar({
   );
 }
 
+function isWorkspaceBusy(
+  isRunning: boolean,
+  isRunningQueue: boolean,
+  claimDetail: ClaimDetailModel | null,
+  claims: ClaimSummary[],
+): boolean {
+  return (
+    isRunning ||
+    isRunningQueue ||
+    claimDetail?.status === "in_progress" ||
+    claims.some((c) => c.status === "in_progress")
+  );
+}
+
 export function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>("workspace");
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [claims, setClaims] = useState<ClaimSummary[]>([]);
+  const [todos, setTodos] = useState<TodoItem[]>([]);
+  const [runSummary, setRunSummary] = useState("");
   const [selectedClaimId, setSelectedClaimId] = useState<string | null>(null);
   const [claimDetail, setClaimDetail] = useState<ClaimDetailModel | null>(null);
   const [policyDetail, setPolicyDetail] = useState<PolicyDetail | null>(null);
-  const [customerDetail, setCustomerDetail] = useState<CustomerDetail | null>(
-    null,
-  );
+  const [customer, setCustomer] = useState<CustomerDetail | null>(null);
   const [handlers, setHandlers] = useState<HandlerDetail[]>([]);
-  const [instructions, setInstructions] = useState<string>("");
-  const [policyWording, setPolicyWording] =
-    useState<PolicyWordingResponse | null>(null);
-  const [isRunning, setIsRunning] = useState<boolean>(false);
-  const [isRunningQueue, setIsRunningQueue] = useState<boolean>(false);
+  const [instructions, setInstructions] = useState<InstructionsResponse>({
+    instructions: "",
+  });
+  const [wording, setWording] = useState<PolicyWordingResponse | null>(null);
+  const [manual, setManual] = useState<ClaimsManualResponse | null>(null);
+  const [isRunning, setIsRunning] = useState(false);
+  const [isRunningQueue, setIsRunningQueue] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const loadSelectedClaimBundle = useCallback(async (claimId: string) => {
     try {
       const detail = await fetchClaimDetail(claimId);
       setClaimDetail(detail);
-      const [policy, customer] = await Promise.all([
+      const [policy, cust] = await Promise.all([
         fetchPolicyDetail(detail.policy_id),
         fetchCustomerDetail(detail.customer_id),
       ]);
       setPolicyDetail(policy);
-      setCustomerDetail(customer);
+      setCustomer(cust);
     } catch {
       setErrorMessage(`Unable to load claim ${claimId}`);
     }
   }, []);
 
-  useEffect(() => {
-    async function bootstrap() {
-      try {
-        const [claimsData, handlersData, instructionsData, wordingData] =
-          await Promise.all([
-            fetchClaims(),
-            fetchHandlers(),
-            fetchInstructions(),
-            fetchPolicyWording(),
-          ]);
-        setClaims(claimsData);
-        setHandlers(handlersData);
-        setInstructions(instructionsData.instructions);
-        setPolicyWording(wordingData);
-        if (claimsData.length > 0) {
-          setSelectedClaimId(claimsData[0].claim_id);
-          await loadSelectedClaimBundle(claimsData[0].claim_id);
-        }
-      } catch {
-        setErrorMessage("Backend unavailable");
-      }
-    }
-    void bootstrap();
-  }, [loadSelectedClaimBundle]);
+  const refreshQueueRun = useCallback(() => {
+    void fetchQueueRun()
+      .then((qState) => {
+        setTodos(qState.todos);
+        setRunSummary(qState.summary);
+      })
+      .catch(() => null);
+  }, []);
 
-  const handleSelectClaim = (claimId: string) => {
-    setSelectedClaimId(claimId);
-    void loadSelectedClaimBundle(claimId);
-  };
+  useEffect(() => {
+    void Promise.all([
+      fetchClaims(),
+      fetchHandlers(),
+      fetchInstructions(),
+      fetchPolicyWording(),
+    ])
+      .then(
+        async ([claimsData, handlersData, instructionsData, wordingDoc]) => {
+          setClaims(claimsData);
+          setHandlers(handlersData);
+          setInstructions(instructionsData);
+          setWording(wordingDoc);
+          void fetchClaimsManual()
+            .then(setManual)
+            .catch(() => null);
+          refreshQueueRun();
+          if (claimsData.length > 0) {
+            setSelectedClaimId(claimsData[0].claim_id);
+            await loadSelectedClaimBundle(claimsData[0].claim_id);
+          }
+        },
+      )
+      .catch(() => {
+        setErrorMessage("Backend unavailable");
+      });
+  }, [loadSelectedClaimBundle, refreshQueueRun]);
 
   const shouldPoll =
     Boolean(selectedClaimId) &&
-    (isRunning || isRunningQueue || claimDetail?.status === "in_progress");
+    isWorkspaceBusy(isRunning, isRunningQueue, claimDetail, claims);
 
   useEffect(() => {
     if (!shouldPoll || !selectedClaimId) return;
     const timer = window.setInterval(() => {
-      void Promise.all([fetchClaimDetail(selectedClaimId), fetchClaims()]).then(
-        ([detail, queue]) => {
+      void Promise.all([fetchClaimDetail(selectedClaimId), fetchClaims()])
+        .then(([detail, queue]) => {
           setClaimDetail(detail);
           setClaims(queue);
-        },
-      );
+        })
+        .catch(() => null);
+      refreshQueueRun();
     }, 1000);
     return () => {
       window.clearInterval(timer);
     };
-  }, [shouldPoll, selectedClaimId]);
-
-  const handleToggleTheme = () => {
-    const nextTheme = theme === "light" ? "dark" : "light";
-    setTheme(nextTheme);
-    document.documentElement.dataset.theme = nextTheme;
-  };
+  }, [shouldPoll, selectedClaimId, refreshQueueRun]);
 
   const handleRunAgent = (claimId: string) => {
     setIsRunning(true);
@@ -177,29 +201,23 @@ export function App() {
       });
   };
 
-  const handleRunAllWaiting = () => {
-    const waitingIds = claims
-      .filter((c) => c.status === "waiting")
-      .map((c) => c.claim_id);
-    if (waitingIds.length === 0) return;
+  const handleRunAllWaiting = (cap: number) => {
+    if (!claims.some((c) => c.status === "waiting")) return;
     setIsRunningQueue(true);
     setErrorMessage(null);
-    async function processQueue() {
-      try {
-        for (const claimId of waitingIds) {
-          setSelectedClaimId(claimId);
-          await loadSelectedClaimBundle(claimId);
-          const updated = await triggerClaimAgent(claimId);
-          setClaimDetail(updated);
-          setClaims(await fetchClaims());
-        }
-      } catch {
+    void triggerQueueRun(cap)
+      .then(async (qState) => {
+        setTodos(qState.todos);
+        setRunSummary(qState.summary);
+        setClaims(await fetchClaims());
+        if (selectedClaimId) await loadSelectedClaimBundle(selectedClaimId);
+      })
+      .catch(() => {
         setErrorMessage("Failed while running waiting claims queue");
-      } finally {
+      })
+      .finally(() => {
         setIsRunningQueue(false);
-      }
-    }
-    void processQueue();
+      });
   };
 
   const handleSignOff = (claimId: string, handlerId: string) => {
@@ -219,9 +237,9 @@ export function App() {
     void resetAllClaims()
       .then(async (resetQueue) => {
         setClaims(resetQueue);
-        if (selectedClaimId) {
-          await loadSelectedClaimBundle(selectedClaimId);
-        }
+        setTodos([]);
+        setRunSummary("");
+        if (selectedClaimId) await loadSelectedClaimBundle(selectedClaimId);
       })
       .catch(() => {
         setErrorMessage("Failed to reset claims queue");
@@ -234,13 +252,14 @@ export function App() {
         activeTab={activeTab}
         theme={theme}
         onSelectTab={setActiveTab}
-        onToggleTheme={handleToggleTheme}
+        onToggleTheme={() => {
+          const nextTheme = theme === "light" ? "dark" : "light";
+          setTheme(nextTheme);
+          document.documentElement.dataset.theme = nextTheme;
+        }}
       />
       {errorMessage ? (
-        <div
-          role="alert"
-          style={{ padding: "12px 24px", color: "var(--rose-text)" }}
-        >
+        <div role="alert" className="error-banner">
           {errorMessage}
         </div>
       ) : null}
@@ -249,16 +268,21 @@ export function App() {
           <div className="workspace">
             <ClaimsQueue
               claims={claims}
+              todos={todos}
+              runSummary={runSummary}
               selectedClaimId={selectedClaimId}
               isRunningQueue={isRunningQueue}
-              onSelectClaim={handleSelectClaim}
+              onSelectClaim={(claimId) => {
+                setSelectedClaimId(claimId);
+                void loadSelectedClaimBundle(claimId);
+              }}
               onRunAllWaiting={handleRunAllWaiting}
               onResetQueue={handleResetQueue}
             />
             <ClaimDetail
               claim={claimDetail}
               policy={policyDetail}
-              customer={customerDetail}
+              customer={customer}
               handlers={handlers}
               isRunning={isRunning || isRunningQueue}
               onRunAgent={handleRunAgent}
@@ -268,7 +292,8 @@ export function App() {
         ) : (
           <InstructionsView
             instructions={instructions}
-            policyWording={policyWording}
+            policyWording={wording}
+            claimsManual={manual}
           />
         )}
       </main>

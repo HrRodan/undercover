@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+TodoStatus = Literal["to_do", "in_progress", "done", "left_for_handler"]
+
 
 class ClaimItem(BaseModel):
     """Single expense item claimed by the customer."""
@@ -49,6 +51,8 @@ class ClaimSummary(BaseModel):
     payment_status: str
     amount_paid: float
     signed_off_by: str | None
+    attempts: int
+    sections_read: list[str]
 
 
 class ClaimDetail(ClaimSummary):
@@ -163,10 +167,64 @@ class PolicyWordingResponse(BaseModel):
     content: str
 
 
+class ClaimsManualResponse(BaseModel):
+    """Internal claims handling manual document."""
+
+    version: str
+    content: str
+
+
+class DocumentSectionSummary(BaseModel):
+    """Heading metadata for a single section of the wording or manual."""
+
+    doc_name: str
+    section_id: str
+    title: str
+
+
+class DocumentSectionDetail(DocumentSectionSummary):
+    """Full markdown content of a single section of the wording or manual."""
+
+    content: str
+
+
+class DocumentSearchRequest(BaseModel):
+    """Request body for searching across the policy wording and claims manual."""
+
+    query: str
+
+
+class SectionReadRequest(BaseModel):
+    """Request body for recording that a claim read a specific document section."""
+
+    doc_name: str
+    section_id: str
+
+
 class InstructionsResponse(BaseModel):
-    """Read-only system prompt for the UnderCover Agent."""
+    """Read-only system prompts for the UnderCover queue and claim agents."""
 
     instructions: str
+    queue_instructions: str
+    claim_instructions: str
+
+
+class ConfigResponse(BaseModel):
+    """Active file and model configuration for the platform."""
+
+    policy_wording_file: str
+    claims_manual_file: str
+    claims_file: str
+    policies_file: str
+    customers_file: str
+    plans_file: str
+    handlers_file: str
+    company_file: str
+    default_model: str
+    queue_model_name: str
+    claim_model_name: str
+    queue_reasoning_effort: str | None
+    claim_reasoning_effort: str | None
 
 
 class StepRequest(BaseModel):
@@ -194,3 +252,57 @@ class SignOffRequest(BaseModel):
     """Request body for handler sign-off on payouts over $1,000."""
 
     handler_id: str
+
+
+class FailClaimRequest(BaseModel):
+    """Request body for recording a failed attempt on a claim."""
+
+    error: str
+
+
+class TodoItemSchema(BaseModel):
+    """Single item in the queue agent's to-do list."""
+
+    claim_id: str
+    description: str
+    status: TodoStatus
+    result_summary: str
+
+
+class SingleTodoUpdateRequest(BaseModel):
+    """Request body for updating a single claim's to-do item."""
+
+    description: str
+    status: TodoStatus
+    result_summary: str
+
+
+class TodoListUpdateRequest(BaseModel):
+    """Request body for replacing or updating the queue agent's to-do list."""
+
+    todos: list[TodoItemSchema]
+
+
+class QueueRunRequest(BaseModel):
+    """Request body for starting a queue run with a claim cap."""
+
+    cap: int
+
+
+class QueueRunStateUpdateRequest(BaseModel):
+    """Request body for updating the persisted queue run status and summary."""
+
+    status: str
+    cap: int
+    summary: str
+    target_claims: list[str]
+
+
+class QueueRunStatusResponse(BaseModel):
+    """Current status, cap, to-do list, and summary of the queue run."""
+
+    status: str
+    cap: int
+    summary: str
+    target_claims: list[str]
+    todos: list[TodoItemSchema]

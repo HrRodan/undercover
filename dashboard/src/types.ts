@@ -1,9 +1,15 @@
 export type ClaimStatus =
-  "waiting" | "in_progress" | "waiting_for_sign_off" | "decided";
+  | "waiting"
+  | "in_progress"
+  | "waiting_for_sign_off"
+  | "decided"
+  | "left_for_handler";
 
 export type ClaimDecision = "approve" | "decline" | "refer";
 
 export type PaymentStatus = "unpaid" | "pending_sign_off" | "paid";
+
+export type TodoStatus = "to_do" | "in_progress" | "done" | "left_for_handler";
 
 export interface ClaimItem {
   description: string;
@@ -41,6 +47,8 @@ export interface ClaimSummary {
   payment_status: PaymentStatus;
   amount_paid: number;
   signed_off_by: string | null;
+  attempts?: number;
+  sections_read?: string[];
 }
 
 export interface ClaimDetail extends ClaimSummary {
@@ -135,6 +143,28 @@ export interface PolicyWordingResponse {
   content: string;
 }
 
+export interface ClaimsManualResponse {
+  version: string;
+  content: string;
+}
+
 export interface InstructionsResponse {
   instructions: string;
+  queue_instructions?: string;
+  claim_instructions?: string;
+}
+
+export interface TodoItem {
+  claim_id: string;
+  description: string;
+  status: TodoStatus;
+  result_summary: string;
+}
+
+export interface QueueRunState {
+  status: string;
+  cap: number;
+  summary: string;
+  target_claims: string[];
+  todos: TodoItem[];
 }

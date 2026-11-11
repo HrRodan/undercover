@@ -1,4 +1,5 @@
 import type { ClaimStatus, ClaimStep } from "../types";
+import { SemanticBadge } from "./StatusBadge";
 
 export interface AgentStepsProps {
   steps: ClaimStep[];
@@ -11,7 +12,7 @@ export function AgentSteps({ steps, status }: Readonly<AgentStepsProps>) {
       <div className="panel-header">
         <h3 className="section-title">Agent Step-by-Step Activity</h3>
         {status === "in_progress" ? (
-          <span className="status-badge badge-cyan">Working live</span>
+          <SemanticBadge label="Working live" variant="cyan" />
         ) : null}
       </div>
 

@@ -1,21 +1,58 @@
 import { expect, test } from "@playwright/test";
 
-test("displays the 25-claim queue, full claim details, steps, over-limit sign-off, and instructions", async ({
+test("displays the 25-claim queue, to-do list, sections read, automatic recovery state, over-limit sign-off, and instructions", async ({
   page,
   request,
 }) => {
+  await request.post("/api/claims/reset");
   await page.goto("/");
 
   await expect(
     page.getByRole("heading", { name: "UnderCover", exact: true }),
   ).toBeVisible();
   await expect(page.getByText("25 total claims in queue")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Agent To-Do List" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Run cap")).toBeVisible();
   await expect(page.getByRole("button", { name: "CLM-1001" })).toBeVisible();
   await expect(page.getByText("Airport hotel, one night")).toBeVisible();
   await expect(
     page.getByText("Meridian Air cancellation notice"),
   ).toBeVisible();
   await expect(page.getByText("UnderCover Premium")).toBeVisible();
+
+  const queueScrollOverflows = await page
+    .locator(".queue-table")
+    .evaluate((el) => el.scrollWidth > (el.parentElement?.clientWidth ?? 0));
+  expect(queueScrollOverflows).toBe(false);
+
+  const itemsScrollOverflows = await page
+    .locator(".items-table")
+    .evaluate((el) => el.scrollWidth > (el.parentElement?.clientWidth ?? 0));
+  expect(itemsScrollOverflows).toBe(false);
+
+  const todoRes = await request.put("/api/todos", {
+    data: {
+      todos: [
+        {
+          claim_id: "CLM-1001",
+          description: "Decide trip delay claim CLM-1001",
+          status: "done",
+          result_summary: "CLM-1001: approve ($420.00)",
+        },
+      ],
+    },
+  });
+  expect(todoRes.status()).toBe(200);
+
+  const secRes = await request.post("/api/claims/CLM-1001/sections-read", {
+    data: {
+      doc_name: "claims_manual",
+      section_id: "7-interpretation-notes",
+    },
+  });
+  expect(secRes.status()).toBe(200);
 
   const stepRes = await request.post("/api/claims/CLM-1001/steps", {
     data: { message: "Reading claim CLM-1001 and verifying carrier delay" },
@@ -38,14 +75,35 @@ test("displays the 25-claim queue, full claim details, steps, over-limit sign-of
   });
   expect(payRes.status()).toBe(200);
 
+  await request.post("/api/claims/CLM-1002/fail", {
+    data: { error: "First transient timeout" },
+  });
+  const fail2 = await request.post("/api/claims/CLM-1002/fail", {
+    data: { error: "Second failure escalated to handler" },
+  });
+  expect(fail2.status()).toBe(200);
+
+  await page.reload();
   await page.getByRole("button", { name: "CLM-1001" }).click();
+  await expect(
+    page.getByText(/Decide trip delay claim CLM-1001/),
+  ).toBeVisible();
   await expect(
     page
       .getByText("Reading claim CLM-1001 and verifying carrier delay")
       .first(),
   ).toBeVisible();
+  await expect(
+    page.getByText("Claims Manual — 7. Interpretation notes", { exact: true }),
+  ).toBeVisible();
   await expect(page.getByText("Section 3: Trip Delay")).toBeVisible();
   await expect(page.getByRole("button", { name: "Rerun Agent" })).toBeVisible();
+
+  await page
+    .getByRole("button", { name: "Left for handler", exact: true })
+    .click();
+  await expect(page.getByRole("button", { name: "CLM-1002" })).toBeVisible();
+  await page.getByRole("button", { name: "All", exact: true }).click();
 
   const overLimitDec = await request.post("/api/claims/CLM-1003/decision", {
     data: {
@@ -74,7 +132,12 @@ test("displays the 25-claim queue, full claim details, steps, over-limit sign-of
 
   await page.getByRole("button", { name: "Agent Instructions" }).click();
   await expect(
-    page.getByRole("heading", { name: "Agent Instructions" }),
+    page.getByRole("heading", { name: "Queue Agent Instructions" }),
   ).toBeVisible();
-  await expect(page.getByText(/You are the UnderCover Agent/)).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Claim Subagent Instructions" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Claims Handling Manual" }),
+  ).toBeVisible();
 });

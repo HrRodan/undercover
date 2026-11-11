@@ -34,6 +34,8 @@ const CLAIM_1001_SUMMARY: ClaimSummary = {
   payment_status: "unpaid",
   amount_paid: 0.0,
   signed_off_by: null,
+  attempts: 0,
+  sections_read: [],
 };
 
 const CLAIM_1003_SUMMARY: ClaimSummary = {
@@ -54,6 +56,8 @@ const CLAIM_1003_SUMMARY: ClaimSummary = {
   payment_status: "pending_sign_off",
   amount_paid: 0.0,
   signed_off_by: null,
+  attempts: 0,
+  sections_read: ["Policy Wording — Emergency Medical"],
 };
 
 const SAMPLE_CLAIMS: ClaimSummary[] = [CLAIM_1001_SUMMARY, CLAIM_1003_SUMMARY];
@@ -97,6 +101,10 @@ const CLAIM_1001_DECIDED: ClaimDetail = {
   reason: "Covered 19-hour delay under Section 3.",
   payment_status: "paid",
   amount_paid: 420.0,
+  sections_read: [
+    "Policy Wording — Trip Delay",
+    "Claims Manual — 7. Interpretation notes",
+  ],
   steps: [
     {
       step_number: 1,
@@ -232,10 +240,57 @@ const MOCK_ROUTES: Record<string, unknown> = {
   "GET /api/handlers": SAMPLE_HANDLERS,
   "GET /api/instructions": {
     instructions: "You are the UnderCover Agent. Follow the wording.",
+    queue_instructions:
+      "You are the UnderCover Master Queue Agent. Plan the queue.",
+    claim_instructions:
+      "You are an UnderCover Claim Subagent. Decide one claim.",
   },
   "GET /api/policy-wording": {
     version: "2026.1",
     content: "# UnderCover Travel Insurance: Policy Wording",
+  },
+  "GET /api/claims-manual": {
+    version: "2026.2",
+    content: "# UnderCover Claims Handling Manual",
+  },
+  "GET /api/queue-run": {
+    status: "idle",
+    cap: 25,
+    summary: "",
+    target_claims: [],
+    todos: [],
+  },
+  "POST /api/queue/run": {
+    status: "completed",
+    cap: 5,
+    summary: "Worked 1 waiting claim.",
+    target_claims: ["CLM-1001", "CLM-1002", "CLM-1004", "CLM-1005"],
+    todos: [
+      {
+        claim_id: "CLM-1001",
+        description: "Decide claim CLM-1001",
+        status: "done",
+        result_summary: "CLM-1001: approve ($420.00)",
+      },
+      {
+        claim_id: "CLM-1002",
+        description: "Decide claim CLM-1002",
+        status: "left_for_handler",
+        result_summary: "CLM-1002: failed twice; left for a handler.",
+      },
+      {
+        claim_id: "CLM-1004",
+        description: "Decide claim CLM-1004",
+        status: "in_progress",
+        result_summary: "Working claim",
+      },
+      {
+        claim_id: "CLM-1005",
+        description: "Decide claim CLM-1005",
+        status: "to_do",
+        result_summary: "",
+      },
+    ],
   },
   "GET /api/claims/CLM-1001": CLAIM_1001_DETAIL,
   "POST /api/claims/CLM-1001/run": CLAIM_1001_DECIDED,
@@ -248,9 +303,17 @@ const MOCK_ROUTES: Record<string, unknown> = {
 };
 
 function createMockFetch() {
+  let clm1001Decided = false;
   return vi.fn((url: string, init?: RequestInit) => {
     const method = init?.method ?? "GET";
-    const payload = MOCK_ROUTES[`${method} ${url}`];
+    const key = `${method} ${url}`;
+    if (key === "POST /api/queue/run") {
+      clm1001Decided = true;
+    }
+    if (key === "GET /api/claims/CLM-1001" && clm1001Decided) {
+      return Promise.resolve(new Response(JSON.stringify(CLAIM_1001_DECIDED)));
+    }
+    const payload = MOCK_ROUTES[key];
     if (payload !== undefined) {
       return Promise.resolve(new Response(JSON.stringify(payload)));
     }
@@ -263,7 +326,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("loads the queue, displays full claim details, runs the agent, and shows steps", async () => {
+it("loads the queue, displays full claim details, runs the queue with cap, and shows todos and sections read", async () => {
   const mockFetch = createMockFetch();
   vi.stubGlobal("fetch", mockFetch);
 
@@ -279,18 +342,41 @@ it("loads the queue, displays full claim details, runs the agent, and shows step
   expect(formatUsd(420)).toBe("$420.00");
   expect(formatClaimType("trip_delay")).toBe("Trip Delay");
 
+  const capSelect = screen.getByLabelText("Cap:");
+  fireEvent.change(capSelect, { target: { value: "5" } });
+
   const runAllBtn = screen.getByRole("button", {
     name: "Run All Waiting (1)",
   });
   fireEvent.click(runAllBtn);
 
+  expect(mockFetch).toHaveBeenCalledWith(
+    "/api/queue/run",
+    expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({ cap: 5 }),
+    }),
+  );
+
   expect(
     await screen.findByText("Recording decision: approve ($420.00)"),
+  ).toBeDefined();
+  expect(screen.getByText("Worked 1 waiting claim.")).toBeDefined();
+  expect(screen.getByText(/Decide claim CLM-1001/)).toBeDefined();
+  expect(screen.getByText(/Decide claim CLM-1002/)).toBeDefined();
+  expect(screen.getByText("Policy Wording — Trip Delay")).toBeDefined();
+  expect(
+    screen.getByText("Claims Manual — 7. Interpretation notes"),
   ).toBeDefined();
   expect(
     screen.getByText("Covered 19-hour delay under Section 3."),
   ).toBeDefined();
   expect(screen.getByText("Section 3: Trip Delay")).toBeDefined();
+
+  const leftFilter = screen.getByRole("button", { name: "Left for handler" });
+  fireEvent.click(leftFilter);
+  const allFilter = screen.getByRole("button", { name: "All" });
+  fireEvent.click(allFilter);
 
   const rerunBtn = await screen.findByRole("button", { name: "Rerun Agent" });
   fireEvent.click(rerunBtn);
@@ -340,10 +426,16 @@ it("allows handler sign-off on a claim over $1,000 and switches to Agent Instruc
   });
   fireEvent.click(instructionsTab);
 
-  expect(await screen.findByText(/You are the UnderCover Agent/)).toBeDefined();
+  expect(
+    await screen.findByText(/You are the UnderCover Master Queue Agent/),
+  ).toBeDefined();
+  expect(
+    screen.getByText(/You are an UnderCover Claim Subagent/),
+  ).toBeDefined();
   expect(
     screen.getByText(/# UnderCover Travel Insurance: Policy Wording/),
   ).toBeDefined();
+  expect(screen.getByText(/# UnderCover Claims Handling Manual/)).toBeDefined();
 
   const themeBtn = screen.getByRole("button", { name: "Dark mode" });
   fireEvent.click(themeBtn);

@@ -1,4 +1,4 @@
-"""Unit tests for the UnderCover Agent and its backend API tools."""
+"""Unit tests for the UnderCover Claim Subagent, tools, middleware, and config."""
 
 from pathlib import Path
 from typing import Any
@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, ToolMessage
 
 from agent import main
 from backend.main import app
@@ -33,8 +33,10 @@ def test_check_backend(isolated_backend: TestClient) -> None:
     assert main.check_backend.invoke({}) == "ok"
 
 
-def test_run_approve_under_limit(isolated_backend: TestClient) -> None:
-    """Verify full agent tool loop approves and pays a claim under $1,000."""
+def test_run_approve_under_limit_and_read_sections(
+    isolated_backend: TestClient,
+) -> None:
+    """Verify subagent reads sections, approves, and pays a claim under $1,000."""
     replies = [
         AIMessage(
             content="",
@@ -70,10 +72,31 @@ def test_run_approve_under_limit(isolated_backend: TestClient) -> None:
             content="",
             tool_calls=[
                 {
-                    "name": "get_policy_wording",
-                    "args": {},
-                    "id": "call-4",
-                }
+                    "name": "list_document_sections",
+                    "args": {"doc_name": "policy_wording"},
+                    "id": "call-4a",
+                },
+                {
+                    "name": "search_documents",
+                    "args": {"query": "Trip Delay waiting period"},
+                    "id": "call-4b",
+                },
+                {
+                    "name": "read_document_section",
+                    "args": {
+                        "doc_name": "policy_wording",
+                        "section_id": "Trip Delay",
+                    },
+                    "id": "call-4c",
+                },
+                {
+                    "name": "read_document_section",
+                    "args": {
+                        "doc_name": "claims_manual",
+                        "section_id": "7",
+                    },
+                    "id": "call-4d",
+                },
             ],
         ),
         AIMessage(
@@ -107,10 +130,10 @@ def test_run_approve_under_limit(isolated_backend: TestClient) -> None:
                 }
             ],
         ),
-        AIMessage(content="Claim CLM-1001 approved and paid for $420.00."),
+        AIMessage(content="CLM-1001: approve ($420.00)"),
     ]
     reply = main.run("CLM-1001", "thread-1", StubModel(messages=iter(replies)))
-    assert reply == "Claim CLM-1001 approved and paid for $420.00."
+    assert reply == "CLM-1001: approve ($420.00)"
 
     claim = isolated_backend.get("/api/claims/CLM-1001").json()
     assert claim["status"] == "decided"
@@ -118,15 +141,8 @@ def test_run_approve_under_limit(isolated_backend: TestClient) -> None:
     assert claim["payout"] == 420.0
     assert claim["payment_status"] == "paid"
     assert claim["amount_paid"] == 420.0
-    step_messages = [s["message"] for s in claim["steps"]]
-    assert step_messages == [
-        "Reading claim CLM-1001",
-        "Checking policy POL-2001 and plan limits",
-        "Reviewing customer claim history for CUS-3001",
-        "Reading policy wording",
-        "Recording decision: approve ($420.00)",
-        "Requesting payout of $420.00",
-    ]
+    assert "Policy Wording — Trip Delay" in claim["sections_read"]
+    assert "Claims Manual — 7. Interpretation notes" in claim["sections_read"]
 
 
 def test_run_approve_over_limit_holds_payment_pending_sign_off(
@@ -191,27 +207,50 @@ def test_run_approve_over_limit_holds_payment_pending_sign_off(
     assert "Payment of $3,750.00 held pending handler sign-off" in step_messages
 
 
-def test_model_name_and_backend_client(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify model configuration and default httpx backend client creation."""
+def test_model_configuration_and_reasoning_efforts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify queue (medium) and claim (low) model configurations and overrides."""
     with main.backend() as client:
         assert str(client.base_url).startswith("http://localhost:8000")
 
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.delenv("MODEL_NAME", raising=False)
-    assert main.model().model_name == "openai/gpt-6-luna"
+    monkeypatch.delenv("QUEUE_MODEL_NAME", raising=False)
+    monkeypatch.delenv("CLAIM_MODEL_NAME", raising=False)
+    monkeypatch.delenv("QUEUE_REASONING_EFFORT", raising=False)
+    monkeypatch.delenv("CLAIM_REASONING_EFFORT", raising=False)
+
+    q_model = main.model("queue")
+    c_model = main.model("claim")
+    assert q_model.model_name == "openai/gpt-6-luna"
+    assert q_model.reasoning_effort == "medium"
+    assert c_model.model_name == "openai/gpt-6-luna"
+    assert c_model.reasoning_effort == "low"
+
     monkeypatch.setenv("MODEL_NAME", "openrouter/free")
-    assert main.model().model_name == "openrouter/free"
+    assert main.model("queue").model_name == "openrouter/free"
+    assert main.model("queue").reasoning_effort is None
+    assert main.model("claim").model_name == "openrouter/free"
+    assert main.model("claim").reasoning_effort is None
+
+    monkeypatch.setenv("QUEUE_REASONING_EFFORT", "high")
+    assert main.model("queue").reasoning_effort == "high"
+    monkeypatch.setenv("QUEUE_REASONING_EFFORT", "none")
+    assert main.model("queue").reasoning_effort is None
 
 
-def test_tools_recover_from_wrong_id_and_normalize_decision(
+def test_tools_recover_from_wrong_id_and_prevent_double_decision(
     isolated_backend: TestClient,
 ) -> None:
-    """Verify tool error recovery on 404 and decision normalization."""
-    pol_err = main.get_policy.invoke({"policy_id": "CLM-1001"})
-    assert "error" in pol_err
-
-    cus_err = main.get_customer.invoke({"customer_id": "CLM-1001"})
-    assert "error" in cus_err
+    """Verify tool error recovery on 404 and duplicate decision/pay guards."""
+    assert "error" in main.get_policy.invoke({"policy_id": "CLM-1001"})
+    assert "error" in main.get_customer.invoke({"customer_id": "CLM-1001"})
+    assert "error" in main.list_document_sections.invoke({"doc_name": "invalid"})[0]
+    assert "error" in main.read_document_section.invoke(
+        {"doc_name": "claims_manual", "section_id": "999"}
+    )
+    assert "version" in main.get_policy_wording.invoke({})
 
     dec = main.decide_claim.invoke(
         {
@@ -224,3 +263,58 @@ def test_tools_recover_from_wrong_id_and_normalize_decision(
     )
     assert dec["decision"] == "approve"
     assert dec["status"] == "decided"
+
+    dup_dec = main.decide_claim.invoke(
+        {
+            "claim_id": "CLM-1001",
+            "decision": "decline",
+            "payout": 0.0,
+            "policy_section": "Section 3: Trip Delay",
+            "reason": "Duplicate.",
+        }
+    )
+    assert dup_dec["status"] == "already_decided"
+
+    paid = main.pay_claim.invoke({"claim_id": "CLM-1001", "amount": 420.0})
+    assert paid["payment_status"] == "paid"
+
+    dup_paid = main.pay_claim.invoke({"claim_id": "CLM-1001", "amount": 420.0})
+    assert dup_paid["status"] == "conflict"
+
+
+def test_middleware_model_retry_and_tool_error_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify model_retry_middleware and tool_error_boundary_middleware."""
+    monkeypatch.setenv("MODEL_MAX_RETRIES", "3")
+    attempts = 0
+
+    def flaky_handler(_req: Any) -> str:
+        nonlocal attempts
+        attempts += 1
+        if attempts < 2:
+            raise RuntimeError("Transient OpenRouter 502")
+        return "recovered"
+
+    res = main.model_retry_middleware.wrap_model_call(None, flaky_handler)  # type: ignore[arg-type]
+    assert res == "recovered"
+    assert attempts == 2
+
+    def always_failing_handler(_req: Any) -> str:
+        raise RuntimeError("Permanent failure")
+
+    with pytest.raises(RuntimeError, match="Permanent failure"):
+        main.model_retry_middleware.wrap_model_call(None, always_failing_handler)  # type: ignore[arg-type]
+
+    class DummyToolReq:
+        tool_call = {"name": "get_claim", "id": "tc-99"}
+
+    def failing_tool_handler(_req: Any) -> ToolMessage:
+        raise ValueError("Bad tool input")
+
+    err_msg = main.tool_error_boundary_middleware.wrap_tool_call(
+        DummyToolReq(),  # type: ignore[arg-type]
+        failing_tool_handler,
+    )
+    assert isinstance(err_msg, ToolMessage)
+    assert "Error in get_claim: Bad tool input" in str(err_msg.content)

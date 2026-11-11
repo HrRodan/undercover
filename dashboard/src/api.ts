@@ -1,11 +1,13 @@
 import type {
   ClaimDetail,
+  ClaimsManualResponse,
   ClaimSummary,
   CustomerDetail,
   HandlerDetail,
   InstructionsResponse,
   PolicyDetail,
   PolicyWordingResponse,
+  QueueRunState,
 } from "./types";
 
 const USD_FORMATTER = new Intl.NumberFormat("en-US", {
@@ -62,6 +64,22 @@ export async function fetchInstructions(): Promise<InstructionsResponse> {
 
 export async function fetchPolicyWording(): Promise<PolicyWordingResponse> {
   return requestJson<PolicyWordingResponse>("/api/policy-wording");
+}
+
+export async function fetchClaimsManual(): Promise<ClaimsManualResponse> {
+  return requestJson<ClaimsManualResponse>("/api/claims-manual");
+}
+
+export async function fetchQueueRun(): Promise<QueueRunState> {
+  return requestJson<QueueRunState>("/api/queue-run");
+}
+
+export async function triggerQueueRun(cap: number): Promise<QueueRunState> {
+  return requestJson<QueueRunState>("/api/queue/run", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cap }),
+  });
 }
 
 export async function triggerClaimAgent(claimId: string): Promise<ClaimDetail> {

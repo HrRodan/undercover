@@ -8,9 +8,12 @@ import type {
 } from "../types";
 import { AgentSteps } from "./AgentSteps";
 import {
+  CategoryBadge,
   ClaimStatusBadge,
   DecisionBadge,
   PaymentStatusBadge,
+  SectionReadBadge,
+  SemanticBadge,
 } from "./StatusBadge";
 
 export interface ClaimDetailProps {
@@ -76,12 +79,10 @@ function DecisionSection({
         </div>
       </div>
 
-      {claim.reason ? (
-        <p style={{ marginTop: "12px", marginBottom: 0 }}>{claim.reason}</p>
-      ) : null}
+      {claim.reason ? <p className="decision-reason">{claim.reason}</p> : null}
 
       {claim.status === "waiting_for_sign_off" ? (
-        <div className="sign-off-banner" style={{ marginTop: "14px" }}>
+        <div className="sign-off-banner">
           <div>
             <strong>Handler sign-off required:</strong> Payout of{" "}
             <span className="mono-num">{formatUsd(claim.payout ?? 0)}</span>{" "}
@@ -120,6 +121,29 @@ function DecisionSection({
   );
 }
 
+function SectionsReadSection({
+  sectionsRead,
+}: Readonly<{ sectionsRead: string[] }>) {
+  return (
+    <div className="section-block" aria-label="Sections Read">
+      <h3 className="section-title">
+        Policy Wording &amp; Manual Sections Read
+      </h3>
+      {sectionsRead.length === 0 ? (
+        <p className="accent-callout compact-text">
+          No wording or manual sections read on this claim yet.
+        </p>
+      ) : (
+        <div className="badge-cluster">
+          {sectionsRead.map((sec) => (
+            <SectionReadBadge key={sec} section={sec} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PolicyAndCustomerSection({
   policy,
   customer,
@@ -131,7 +155,12 @@ function PolicyAndCustomerSection({
     <div className="meta-grid">
       {policy ? (
         <div className="section-block">
-          <h3 className="section-title">Policy &amp; Plan Coverage</h3>
+          <div className="panel-header compact-header">
+            <h3 className="section-title compact-text">
+              Policy &amp; Plan Coverage
+            </h3>
+            <SemanticBadge label={policy.status} variant="emerald" />
+          </div>
           <div className="meta-grid">
             <div className="meta-item">
               <span className="meta-label">Policy ID</span>
@@ -185,7 +214,7 @@ function PolicyAndCustomerSection({
             </div>
           </div>
           {customer.previous_claims.length > 0 ? (
-            <ul style={{ margin: "10px 0 0 0", paddingLeft: "18px" }}>
+            <ul className="history-list">
               {customer.previous_claims.map((prev) => (
                 <li key={prev.claim_id}>
                   <span className="mono-num">{prev.claim_id}</span> (
@@ -197,7 +226,7 @@ function PolicyAndCustomerSection({
               ))}
             </ul>
           ) : (
-            <p style={{ margin: "10px 0 0 0" }}>No prior claims on file.</p>
+            <p className="history-empty">No prior claims on file.</p>
           )}
         </div>
       ) : null}
@@ -270,11 +299,13 @@ export function ClaimDetail({
           onSignOff={onSignOff}
         />
 
+        <SectionsReadSection sectionsRead={claim.sections_read ?? []} />
+
         <AgentSteps steps={claim.steps} status={claim.status} />
 
         <div className="section-block">
           <h3 className="section-title">Customer Story</h3>
-          <p style={{ margin: 0 }}>{claim.story}</p>
+          <p className="compact-text">{claim.story}</p>
         </div>
 
         <div className="section-block">
@@ -282,26 +313,32 @@ export function ClaimDetail({
             Claimed Items (Total:{" "}
             <span className="mono-num">{formatUsd(claim.amount_claimed)}</span>)
           </h3>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th scope="col">Description</th>
-                <th scope="col">Category</th>
-                <th scope="col" className="amount-cell">
-                  Amount
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {claim.items.map((item) => (
-                <tr key={item.description}>
-                  <td>{item.description}</td>
-                  <td>{item.category}</td>
-                  <td className="amount-cell">{formatUsd(item.amount)}</td>
+          <div className="table-scroll">
+            <table className="data-table items-table">
+              <thead>
+                <tr>
+                  <th scope="col">Description</th>
+                  <th scope="col">Category</th>
+                  <th scope="col" className="amount-cell">
+                    Amount
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {claim.items.map((item) => (
+                  <tr key={item.description}>
+                    <td data-label="Description">{item.description}</td>
+                    <td data-label="Category">
+                      <CategoryBadge category={item.category} />
+                    </td>
+                    <td data-label="Amount" className="amount-cell">
+                      {formatUsd(item.amount)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <div className="section-block">
@@ -309,11 +346,11 @@ export function ClaimDetail({
           <div className="detail-stack">
             {claim.documents.map((doc) => (
               <div key={doc.name}>
-                <strong>{doc.name}</strong>{" "}
-                <span className="brand-subtitle">({doc.type})</span>
-                <pre className="code-well" style={{ marginTop: "6px" }}>
-                  {doc.content}
-                </pre>
+                <div className="doc-header">
+                  <strong>{doc.name}</strong>
+                  <CategoryBadge category={doc.type} />
+                </div>
+                <pre className="code-well doc-pre">{doc.content}</pre>
               </div>
             ))}
           </div>
